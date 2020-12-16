@@ -2,6 +2,7 @@ version 1.0
 
 import "VcfClusterSingleChromsome.wdl" as VcfClusterContig
 import "TasksMakeCohortVcf.wdl" as MiniTasks
+import "HailMerge.wdl" as HailMerge
 
 workflow CombineBatches {
   input {
@@ -24,6 +25,9 @@ workflow CombineBatches {
 
     File empty_file
 
+    File hail_script
+    String project
+
     String sv_base_mini_docker
     String sv_pipeline_docker
 
@@ -37,6 +41,7 @@ workflow CombineBatches {
     RuntimeAttr? runtime_override_concat
     RuntimeAttr? runtime_override_sort_pesr_depth_merged_vcf
     RuntimeAttr? runtime_override_concat_pesr_depth
+    RuntimeAttr? runtime_override_update_fix_pesr_header
 
     # overrides for VcfClusterContig
     RuntimeAttr? runtime_override_localize_vcfs
@@ -46,7 +51,8 @@ workflow CombineBatches {
     RuntimeAttr? runtime_override_subset_bothside_pass
     RuntimeAttr? runtime_override_subset_background_fail
     RuntimeAttr? runtime_override_subset_sv_type
-    RuntimeAttr? runtime_override_shard_vcf_precluster
+    RuntimeAttr? runtime_override_shard_clusters
+    RuntimeAttr? runtime_override_shard_vids
     RuntimeAttr? runtime_override_pull_vcf_shard
     RuntimeAttr? runtime_override_svtk_vcf_cluster
     RuntimeAttr? runtime_override_get_vcf_header_with_members_info_line
@@ -100,6 +106,8 @@ workflow CombineBatches {
         bothside_pass=CleanBothsidePass.outfile,
         background_fail=CleanBackgroundFail.outfile,
         empty_file=empty_file,
+        hail_script=hail_script,
+        project=project,
         sv_pipeline_docker=sv_pipeline_docker,
         sv_base_mini_docker=sv_base_mini_docker,
         runtime_override_localize_vcfs = runtime_override_localize_vcfs,
@@ -109,7 +117,8 @@ workflow CombineBatches {
         runtime_override_subset_bothside_pass=runtime_override_subset_bothside_pass,
         runtime_override_subset_background_fail=runtime_override_subset_background_fail,
         runtime_override_subset_sv_type=runtime_override_subset_sv_type,
-        runtime_override_shard_vcf_precluster=runtime_override_shard_vcf_precluster,
+        runtime_override_shard_clusters=runtime_override_shard_clusters,
+        runtime_override_shard_vids=runtime_override_shard_vids,
         runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
         runtime_override_svtk_vcf_cluster=runtime_override_svtk_vcf_cluster,
         runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
@@ -136,6 +145,8 @@ workflow CombineBatches {
         bothside_pass=CleanBothsidePass.outfile,
         background_fail=CleanBackgroundFail.outfile,
         empty_file=empty_file,
+        hail_script=hail_script,
+        project=project,
         sv_pipeline_docker=sv_pipeline_docker,
         sv_base_mini_docker=sv_base_mini_docker,
         runtime_override_localize_vcfs = runtime_override_localize_vcfs,
@@ -145,7 +156,8 @@ workflow CombineBatches {
         runtime_override_subset_bothside_pass=runtime_override_subset_bothside_pass,
         runtime_override_subset_background_fail=runtime_override_subset_background_fail,
         runtime_override_subset_sv_type=runtime_override_subset_sv_type,
-        runtime_override_shard_vcf_precluster=runtime_override_shard_vcf_precluster,
+        runtime_override_shard_clusters=runtime_override_shard_clusters,
+        runtime_override_shard_vids=runtime_override_shard_vids,
         runtime_override_svtk_vcf_cluster=runtime_override_svtk_vcf_cluster,
         runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
         runtime_override_concat_vcf_cluster=runtime_override_concat_vcf_cluster,
@@ -171,20 +183,29 @@ workflow CombineBatches {
         runtime_attr_override=runtime_override_update_sr_list
     }
 
-    #Merge PESR & RD VCFs
-    call MiniTasks.ConcatVcfs as ConcatPesrDepth {
+    #Hail merge fails due to extra INFO fields in the pesr vcf header
+    call HarmonizeHeader {
       input:
-        vcfs=[ClusterPesr.clustered_vcf, ClusterDepth.clustered_vcf],
-        vcfs_idx=[ClusterPesr.clustered_vcf_idx, ClusterDepth.clustered_vcf_idx],
-        allow_overlaps=true,
-        outfile_prefix="~{cohort_name}.~{contig}.concat_pesr_depth",
+        vcf=ClusterPesr.clustered_vcf,
+        vcf_index=ClusterPesr.clustered_vcf_idx,
+        vcf_header=ClusterDepth.clustered_vcf,
+        prefix="~{cohort_name}.~{contig}.pesr.harmonize_header",
         sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_concat_pesr_depth
+        runtime_attr_override=runtime_override_update_fix_pesr_header
+    }
+    #Merge PESR & RD VCFs
+    call HailMerge.HailMerge as ConcatPesrDepth {
+      input:
+        vcfs=[HarmonizeHeader.out, ClusterDepth.clustered_vcf],
+        prefix="~{cohort_name}.~{contig}.concat_pesr_depth",
+        hail_script=hail_script,
+        project=project,
+        sv_base_mini_docker=sv_base_mini_docker
     }
     call MergePesrDepth {
       input:
-        vcf=ConcatPesrDepth.concat_vcf,
-        vcf_index=ConcatPesrDepth.concat_vcf_idx,
+        vcf=ConcatPesrDepth.merged_vcf,
+        vcf_index=ConcatPesrDepth.merged_vcf_index,
         contig=contig,
         prefix="~{cohort_name}.~{contig}.merge_pesr_depth",
         sv_pipeline_docker=sv_pipeline_docker,
@@ -241,8 +262,6 @@ workflow CombineBatches {
   }
 }
 
-
-#Merge PESR + RD VCFs
 task MergePesrDepth {
   input {
     File vcf
@@ -260,7 +279,49 @@ task MergePesrDepth {
   Float input_size = size(vcf, "GiB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 2.0 + 0.6 * input_size,
-                                  disk_gb: ceil(10.0 + 4 * input_size),
+                                  disk_gb: ceil(10.0 + 6 * input_size),
+                                  cpu_cores: 1,
+                                  preemptible_tries: 3,
+                                  max_retries: 1,
+                                  boot_disk_gb: 10
+                                }
+  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
+  runtime {
+    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
+    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} SSD"
+    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
+    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
+    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
+    docker: sv_pipeline_docker
+    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
+  }
+
+  command <<<
+    set -euo pipefail
+    /opt/sv-pipeline/04_variant_resolution/scripts/merge_pesr_depth.py \
+    --prefix pesr_depth_merged_~{contig} \
+    ~{vcf} \
+    ~{output_file}
+  >>>
+
+  output {
+    File merged_vcf = output_file
+  }
+}
+
+task HarmonizeHeader {
+  input {
+    File vcf
+    File vcf_index
+    File vcf_header
+    String prefix
+    String sv_base_mini_docker
+    RuntimeAttr? runtime_attr_override
+  }
+
+  RuntimeAttr runtime_default = object {
+                                  mem_gb: 3.5,
+                                  disk_gb: ceil(10.0 + 2 * size(vcf, "GiB") + size(vcf_header, "GiB")),
                                   cpu_cores: 1,
                                   preemptible_tries: 3,
                                   max_retries: 1,
@@ -273,19 +334,19 @@ task MergePesrDepth {
     cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
     preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
     maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_pipeline_docker
+    docker: sv_base_mini_docker
     bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
   }
 
   command <<<
     set -euo pipefail
-    /opt/sv-pipeline/04_variant_resolution/scripts/merge_pesr_depth.py \
-      --prefix pesr_depth_merged_~{contig} \
-      ~{vcf} \
-      ~{output_file}
+    bcftools view --header-only ~{vcf_header} > header
+    bcftools reheader --header header ~{vcf} > ~{prefix}.vcf.gz
+    tabix ~{prefix}.vcf.gz
   >>>
 
   output {
-    File merged_vcf = output_file
+    File out = "~{prefix}.vcf.gz"
+    File out_index = "~{prefix}.vcf.gz.tbi"
   }
 }

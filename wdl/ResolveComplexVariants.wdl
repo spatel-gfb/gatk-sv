@@ -23,6 +23,9 @@ workflow ResolveComplexVariants {
     File pe_exclude_list
     File ref_dict
 
+    File hail_script
+    String project
+
     String sv_base_mini_docker
     String sv_pipeline_docker
 
@@ -47,6 +50,7 @@ workflow ResolveComplexVariants {
     RuntimeAttr? runtime_override_restore_unresolved_cnv_per_shard
     RuntimeAttr? runtime_override_concat_resolved_per_shard
     RuntimeAttr? runtime_override_merge_resolve_inner
+    RuntimeAttr? runtime_override_pull_vcf_shard
 
     RuntimeAttr? runtime_override_get_se_cutoff_inv
     RuntimeAttr? runtime_override_shard_vcf_cpx_inv
@@ -56,6 +60,7 @@ workflow ResolveComplexVariants {
     RuntimeAttr? runtime_override_restore_unresolved_cnv_per_shard_inv
     RuntimeAttr? runtime_override_concat_resolved_per_shard_inv
     RuntimeAttr? runtime_override_merge_resolve_inner_inv
+    RuntimeAttr? runtime_override_pull_vcf_shard_inv
   }
 
   #Scatter per chromosome
@@ -91,6 +96,8 @@ workflow ResolveComplexVariants {
         ref_dict=ref_dict,
         precluster_distance=50000000,
         precluster_overlap_frac=0.1,
+        hail_script=hail_script,
+        project=project,
         sv_pipeline_docker=sv_pipeline_docker,
         sv_base_mini_docker=sv_base_mini_docker,
         runtime_override_get_se_cutoff=runtime_override_get_se_cutoff_inv,
@@ -100,7 +107,8 @@ workflow ResolveComplexVariants {
         runtime_override_resolve_cpx_per_shard=runtime_override_resolve_cpx_per_shard_inv,
         runtime_override_restore_unresolved_cnv_per_shard=runtime_override_restore_unresolved_cnv_per_shard_inv,
         runtime_override_concat_resolved_per_shard=runtime_override_concat_resolved_per_shard_inv,
-        runtime_override_merge_resolve_inner=runtime_override_merge_resolve_inner_inv
+        runtime_override_merge_resolve_inner=runtime_override_merge_resolve_inner_inv,
+        runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard_inv
     }
 
     #Run same-bp overlap filter on full vcf
@@ -131,6 +139,8 @@ workflow ResolveComplexVariants {
         ref_dict=ref_dict,
         precluster_distance=1000,
         precluster_overlap_frac=0,
+        hail_script=hail_script,
+        project=project,
         sv_pipeline_docker=sv_pipeline_docker,
         sv_base_mini_docker=sv_base_mini_docker,
         runtime_override_get_se_cutoff=runtime_override_get_se_cutoff,
@@ -141,6 +151,7 @@ workflow ResolveComplexVariants {
         runtime_override_restore_unresolved_cnv_per_shard=runtime_override_restore_unresolved_cnv_per_shard,
         runtime_override_concat_resolved_per_shard=runtime_override_concat_resolved_per_shard,
         runtime_override_merge_resolve_inner=runtime_override_merge_resolve_inner,
+        runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard
     }
 
     #Integrate inv-only and all-variants resolved VCFs
@@ -219,10 +230,10 @@ task IntegrateResolvedVcfs {
 
   Float input_size = size([inv_res_vcf, all_res_vcf], "GiB")
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0,
+                                  mem_gb: 3.75,
                                   disk_gb: ceil(10 + input_size * 10),
                                   cpu_cores: 1,
-                                  preemptible_tries: 1,
+                                  preemptible_tries: 3,
                                   max_retries: 1,
                                   boot_disk_gb: 10
                                 }
@@ -256,23 +267,23 @@ task IntegrateResolvedVcfs {
 
     ##get unresolved variants from full vcf that are resolved in inversion resolved vcf###
     zcat ~{inv_res_vcf} \
-      | fgrep -v "#" \
+      |fgrep -v "#" \
       |awk '{if ($8!~"UNRESOLVED") print}' \
-      |fgrep -wvf <(awk '{if ($NF!="MEMBERS") print $NF}' all.resolved.inv.bed  \
-      |tr ',' '\n') \
-      >add.vcf.lines.txt || true
+      |awk -F'\t' -v OFS='\t' 'ARGIND==1{inFileA[$1]; next} {if (!($3 in inFileA)) print }' \
+        <(awk '{if ($NF!="MEMBERS") print $NF}' all.resolved.inv.bed | tr ',' '\n') - \
+      >add.vcf.lines.txt
 
     ##get unresolved variants id from full vcf to strip since they are resolved in inversion resolved vcf###
     ##inversions that cluster were other variants (rare) are kept as unresolved though they will also be part of a resolved variant in add.vcf.lines.txt##
     awk '{if ($NF!="MEMBERS") print $NF}' inv.resolve.bed \
       |tr ',' '\n'\
-      |fgrep -wf - all.unresolved.inv.bed \
+      |awk -F'\t' -v OFS='\t' 'ARGIND==1{inFileA[$4]; next} {if ($4 in inFileA) print }' all.resolved.inv.bed - \
       |awk '{if ($NF!~",")print $4}' \
-      >remove.unresolved.vcf.ids.txt || true
+      >remove.unresolved.vcf.ids.txt
 
     mkdir temp
     zcat ~{all_res_vcf} \
-      |fgrep -wvf remove.unresolved.vcf.ids.txt \
+      |awk -F'\t' -v OFS='\t' 'ARGIND==1{inFileA[$1]; next} {if (!($3 in inFileA)) print }' remove.unresolved.vcf.ids.txt - \
       |cat - add.vcf.lines.txt \
       |bcftools sort - -O z -T temp \
       > ~{prefix}.vcf.gz

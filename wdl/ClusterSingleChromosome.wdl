@@ -4,6 +4,7 @@ version 1.0
 
 import "TasksMakeCohortVcf.wdl" as MiniTasks
 import "ShardedCluster.wdl" as ShardedCluster
+import "HailMerge.wdl" as HailMerge
 
 # Workflow to perform sharding & clustering of a vcf for a single chromosome
 workflow ClusterSingleChrom {
@@ -19,17 +20,18 @@ workflow ClusterSingleChrom {
     Int sv_size
     Array[String] sv_types
 
+    File hail_script
+    String project
+
     String sv_pipeline_docker
     String sv_base_mini_docker
-
-    # overrides for local tasks
-    RuntimeAttr? runtime_override_concat_svtypes
 
     # overrides for MiniTasks
     RuntimeAttr? runtime_override_subset_sv_type
 
     # overrides for ShardedCluster
-    RuntimeAttr? runtime_override_shard_vcf_precluster
+    RuntimeAttr? runtime_override_shard_clusters
+    RuntimeAttr? runtime_override_shard_vids
     RuntimeAttr? runtime_override_pull_vcf_shard
     RuntimeAttr? runtime_override_svtk_vcf_cluster
     RuntimeAttr? runtime_override_get_vcf_header_with_members_info_line
@@ -65,9 +67,12 @@ workflow ClusterSingleChrom {
         exclude_list=exclude_list,
         sv_size=sv_size,
         sv_types=sv_types,
+        hail_script=hail_script,
+        project=project,
         sv_pipeline_docker=sv_pipeline_docker,
         sv_base_mini_docker=sv_base_mini_docker,
-        runtime_override_shard_vcf_precluster=runtime_override_shard_vcf_precluster,
+        runtime_override_shard_clusters=runtime_override_shard_clusters,
+        runtime_override_shard_vids=runtime_override_shard_vids,
         runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
         runtime_override_svtk_vcf_cluster=runtime_override_svtk_vcf_cluster,
         runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
@@ -85,20 +90,19 @@ workflow ClusterSingleChrom {
   }
 
   #Merge svtypes
-  call MiniTasks.ConcatVcfs as ConcatSvTypes {
+  call HailMerge.HailMerge as ConcatSvTypes {
     input:
       vcfs=RenameVariants.out,
-      vcfs_idx=RenameVariants.out_index,
-      allow_overlaps=true,
-      outfile_prefix="~{prefix}.~{contig}.precluster_concat",
-      sv_base_mini_docker=sv_base_mini_docker,
-      runtime_attr_override=runtime_override_concat_svtypes
+      prefix="~{prefix}.~{contig}.concat_svtypes",
+      hail_script=hail_script,
+      project=project,
+      sv_base_mini_docker=sv_base_mini_docker
   }
 
   #Output clustered vcf
   output {
-    File clustered_vcf = ConcatSvTypes.concat_vcf
-    File clustered_vcf_idx = ConcatSvTypes.concat_vcf_idx
+    File clustered_vcf = ConcatSvTypes.merged_vcf
+    File clustered_vcf_idx = ConcatSvTypes.merged_vcf_index
   }
 }
 

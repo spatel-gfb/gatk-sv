@@ -29,6 +29,9 @@ workflow MakeCohortVcf {
     Array[File] median_coverage_files
     Array[File] rf_cutoff_files
 
+    File hail_script
+    String project
+
     File bin_exclude
     File contig_list
     File allosome_fai
@@ -96,7 +99,8 @@ workflow MakeCohortVcf {
     RuntimeAttr? runtime_override_subset_bothside_pass
     RuntimeAttr? runtime_override_subset_background_fail
     RuntimeAttr? runtime_override_subset_sv_type
-    RuntimeAttr? runtime_override_shard_vcf_precluster
+    RuntimeAttr? runtime_override_shard_clusters
+    RuntimeAttr? runtime_override_shard_vids
     RuntimeAttr? runtime_override_pull_vcf_shard
     RuntimeAttr? runtime_override_svtk_vcf_cluster
     RuntimeAttr? runtime_override_get_vcf_header_with_members_info_line
@@ -116,6 +120,7 @@ workflow MakeCohortVcf {
     RuntimeAttr? runtime_override_concat_resolved_per_shard
     RuntimeAttr? runtime_override_complex_resolve_merge
     RuntimeAttr? runtime_override_merge_resolve_inner
+    RuntimeAttr? runtime_override_pull_vcf_shard
 
     RuntimeAttr? runtime_override_get_se_cutoff_inv
     RuntimeAttr? runtime_override_shard_vcf_cpx_inv
@@ -125,6 +130,7 @@ workflow MakeCohortVcf {
     RuntimeAttr? runtime_override_restore_unresolved_cnv_per_shard_inv
     RuntimeAttr? runtime_override_concat_resolved_per_shard_inv
     RuntimeAttr? runtime_override_merge_resolve_inner_inv
+    RuntimeAttr? runtime_override_pull_vcf_shard_inv
 
     # overrides for GenotypeComplexContig
     RuntimeAttr? runtime_override_ids_from_median
@@ -202,6 +208,8 @@ workflow MakeCohortVcf {
       depth_exclude_list=depth_exclude_list,
       min_sr_background_fail_batches=min_sr_background_fail_batches,
       empty_file=empty_file,
+      hail_script=hail_script,
+      project=project,
       sv_base_mini_docker=sv_base_mini_docker,
       sv_pipeline_docker=sv_pipeline_docker,
       runtime_override_update_sr_list=runtime_override_update_sr_list_cluster,
@@ -213,7 +221,8 @@ workflow MakeCohortVcf {
       runtime_override_subset_bothside_pass=runtime_override_subset_bothside_pass,
       runtime_override_subset_background_fail=runtime_override_subset_background_fail,
       runtime_override_subset_sv_type=runtime_override_subset_sv_type,
-      runtime_override_shard_vcf_precluster=runtime_override_shard_vcf_precluster,
+      runtime_override_shard_clusters=runtime_override_shard_clusters,
+      runtime_override_shard_vids=runtime_override_shard_vids,
       runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
       runtime_override_svtk_vcf_cluster=runtime_override_svtk_vcf_cluster,
       runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
@@ -236,6 +245,8 @@ workflow MakeCohortVcf {
       mei_bed=mei_bed,
       pe_exclude_list=pe_exclude_list,
       ref_dict=ref_dict,
+      hail_script=hail_script,
+      project=project,
       max_shard_size=max_shard_size_resolve,
       sv_base_mini_docker=sv_base_mini_docker,
       sv_pipeline_docker=sv_pipeline_docker,
@@ -253,6 +264,7 @@ workflow MakeCohortVcf {
       runtime_override_restore_unresolved_cnv_per_shard=runtime_override_restore_unresolved_cnv_per_shard,
       runtime_override_concat_resolved_per_shard=runtime_override_concat_resolved_per_shard,
       runtime_override_merge_resolve_inner=runtime_override_merge_resolve_inner,
+      runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
 
       runtime_override_get_se_cutoff_inv=runtime_override_get_se_cutoff_inv,
       runtime_override_shard_vcf_cpx_inv=runtime_override_shard_vcf_cpx_inv,
@@ -261,7 +273,8 @@ workflow MakeCohortVcf {
       runtime_override_resolve_cpx_per_shard_inv=runtime_override_resolve_cpx_per_shard_inv,
       runtime_override_restore_unresolved_cnv_per_shard_inv=runtime_override_restore_unresolved_cnv_per_shard_inv,
       runtime_override_concat_resolved_per_shard_inv=runtime_override_concat_resolved_per_shard_inv,
-      runtime_override_merge_resolve_inner_inv=runtime_override_merge_resolve_inner_inv
+      runtime_override_merge_resolve_inner_inv=runtime_override_merge_resolve_inner_inv,
+      runtime_override_pull_vcf_shard_inv=runtime_override_pull_vcf_shard_inv
   }
 
   call ComplexGenotype.GenotypeComplexVariants {
@@ -310,6 +323,8 @@ workflow MakeCohortVcf {
       min_records_per_shard_clean_vcf_step1=min_records_per_shard_clean_vcf_step1,
       samples_per_clean_vcf_step2_shard=samples_per_clean_vcf_step2_shard,
       outlier_samples_list=outlier_samples_list,
+      hail_script=hail_script,
+      project=project,
       linux_docker=linux_docker,
       sv_base_mini_docker=sv_base_mini_docker,
       sv_pipeline_docker=sv_pipeline_docker,

@@ -25,6 +25,9 @@ workflow VcfClusterSingleChrom {
     File background_fail
     File empty_file
 
+    File hail_script
+    String project
+
     String sv_pipeline_docker
     String sv_base_mini_docker
 
@@ -39,6 +42,8 @@ workflow VcfClusterSingleChrom {
     RuntimeAttr? runtime_override_subset_background_fail
 
     # overrides for VcfClusterTasks
+    RuntimeAttr? runtime_override_shard_clusters
+    RuntimeAttr? runtime_override_shard_vids
     RuntimeAttr? runtime_override_subset_sv_type
     RuntimeAttr? runtime_override_shard_vcf_precluster
     RuntimeAttr? runtime_override_pull_vcf_shard
@@ -114,10 +119,13 @@ workflow VcfClusterSingleChrom {
       exclude_list=exclude_list,
       sv_size=sv_size,
       sv_types=sv_types,
+      hail_script=hail_script,
+      project=project,
       sv_pipeline_docker=sv_pipeline_docker,
       sv_base_mini_docker=sv_base_mini_docker,
       runtime_override_subset_sv_type=runtime_override_subset_sv_type,
-      runtime_override_shard_vcf_precluster=runtime_override_shard_vcf_precluster,
+      runtime_override_shard_clusters=runtime_override_shard_clusters,
+      runtime_override_shard_vids=runtime_override_shard_vids,
       runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
       runtime_override_svtk_vcf_cluster=runtime_override_svtk_vcf_cluster,
       runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,

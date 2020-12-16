@@ -3,6 +3,7 @@ version 1.0
 # Author: Ryan Collins <rlcollins@g.harvard.edu>
 
 import "TasksMakeCohortVcf.wdl" as MiniTasks
+import "HailMerge.wdl" as HailMerge
 
 #Resolve complex SV for a single chromosome
 workflow ResolveComplexSv {
@@ -22,6 +23,9 @@ workflow ResolveComplexSv {
     Int precluster_distance
     Float precluster_overlap_frac
 
+    File hail_script
+    String project
+
     String sv_pipeline_docker
     String sv_base_mini_docker
 
@@ -33,9 +37,8 @@ workflow ResolveComplexSv {
     RuntimeAttr? runtime_override_resolve_cpx_per_shard
     RuntimeAttr? runtime_override_restore_unresolved_cnv_per_shard
     RuntimeAttr? runtime_override_merge_resolve_inner
-
-    # overrides for MiniTasks
     RuntimeAttr? runtime_override_concat_resolved_per_shard
+    RuntimeAttr? runtime_override_pull_vcf_shard
   }
 
   File vcf_idx = vcf + ".tbi"
@@ -45,11 +48,7 @@ workflow ResolveComplexSv {
     File disc_files_idx = disc_files[i]
   }
 
-  # Get SR count cutoff from RF metrics to use in single-ender rescan procedure
-
   #Shard vcf for complex resolution
-  #Note: as of Nov 2, 2018, return lists of variant IDs for each shard. This should
-  # dramatically improve sharding speed
   call ShardVcfCpx {
     input:
       vcf=vcf,
@@ -72,6 +71,7 @@ workflow ResolveComplexSv {
 
   if (length(ShardVids.out) > 0) {
 
+    # Get SR count cutoff from RF metrics to use in single-ender rescan procedure
     call GetSeCutoff {
       input:
         rf_cutoffs=rf_cutoff_files,
@@ -82,11 +82,19 @@ workflow ResolveComplexSv {
     #Scatter over shards and resolve variants per shard
     scatter ( i in range(length(ShardVids.out)) ) {
 
+      call MiniTasks.PullVcfShard {
+        input:
+          vcf=vcf,
+          vids=ShardVids.out[i],
+          prefix="~{prefix}.shard_${i}",
+          sv_base_mini_docker=sv_base_mini_docker,
+          runtime_attr_override=runtime_override_pull_vcf_shard
+      }
+
       #Prep files for svtk resolve using bucket streaming
       call ResolvePrep {
         input:
-          vcf=vcf,
-          VIDs_list=ShardVids.out[i],
+          vcf=PullVcfShard.out,
           chrom=contig,
           disc_files=disc_files,
           disc_files_index=disc_files_idx,
@@ -98,7 +106,7 @@ workflow ResolveComplexSv {
       #Run svtk resolve
       call SvtkResolve {
         input:
-          noref_vcf=ResolvePrep.noref_vcf,
+          vcf=PullVcfShard.out,
           prefix="~{prefix}.svtk_resolve.shard_~{i}",
           chrom=contig,
           cytobands=cytobands,
@@ -113,20 +121,18 @@ workflow ResolveComplexSv {
           runtime_attr_override=runtime_override_resolve_cpx_per_shard
       }
 
-      call MergeResolve {
+      call ReformatResolve {
         input:
-          full_vcf=ResolvePrep.subsetted_vcf,
           resolved_vcf=SvtkResolve.rs_vcf,
           prefix="~{prefix}.merge_resolve.shard_~{i}",
-          noref_vids=ResolvePrep.noref_vids,
           sv_base_mini_docker=sv_base_mini_docker,
           runtime_attr_override=runtime_override_merge_resolve_inner
       }
 
       #Add unresolved variants back into resolved VCF
-      call RestoreUnresolvedCnv as RestoreUnresolvedCnvPerShard {
+      call RestoreUnresolvedCnv {
         input:
-          resolved_vcf=MergeResolve.out,
+          resolved_vcf=ReformatResolve.out,
           unresolved_vcf=SvtkResolve.un_vcf,
           prefix="~{prefix}.restore_unresolved.shard_~{i}",
           sv_pipeline_docker=sv_pipeline_docker,
@@ -135,20 +141,19 @@ workflow ResolveComplexSv {
     }
 
     #Merge across shards
-    call MiniTasks.ConcatVcfs as ConcatResolvedPerShard {
+    call HailMerge.HailMerge as ConcatResolvedPerShard {
       input:
-        vcfs=RestoreUnresolvedCnvPerShard.res,
-        vcfs_idx=RestoreUnresolvedCnvPerShard.res_idx,
-        allow_overlaps=true,
-        outfile_prefix=prefix + ".resolved",
-        sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_concat_resolved_per_shard
+        vcfs=RestoreUnresolvedCnv.res,
+        prefix="~{prefix}.resolved",
+        hail_script=hail_script,
+        project=project,
+        sv_base_mini_docker=sv_base_mini_docker
     }
   }
 
   output {
-    File resolved_vcf_merged = select_first([ConcatResolvedPerShard.concat_vcf, vcf])
-    File resolved_vcf_merged_idx = select_first([ConcatResolvedPerShard.concat_vcf_idx, vcf_idx])
+    File resolved_vcf_merged = select_first([ConcatResolvedPerShard.merged_vcf, vcf])
+    File resolved_vcf_merged_idx = select_first([ConcatResolvedPerShard.merged_vcf_index, vcf_idx])
   }
 }
 
@@ -201,7 +206,6 @@ task GetSeCutoff {
     Int median_PE_cutoff = read_lines("median_cutoff.txt")[0]
   }
 }
-
 
 task ShardVcfCpx {
   input {
@@ -261,7 +265,6 @@ task ShardVcfCpx {
 task ResolvePrep {
   input {
     File vcf
-    File VIDs_list
     File ref_dict
     String chrom
     Array[File] disc_files
@@ -281,18 +284,9 @@ task ResolvePrep {
 
   # sections of disc_files are straemed, but the every operation in this task is record-by-record except
   # bedtools merge, which should only need to keep a few records in memory at a time.
-  # assuming memory overhead is fixed
-  # assuming disk overhead is input size (accounting for compression) + sum(size of disc_files)
-  #  (this is an over-estimate because we only take chunks overlapping VIDs from vcf, but the disk files are not *THAT*
-  #   big and disk is cheap)
-  Float compressed_input_size = size(vcf, "GiB")
-  Float uncompressed_input_size = size([VIDs_list], "GiB")
-  Float compression_factor = 30.0
-  Float base_disk_gb = 10.0
-  Float base_mem_gb = 2.0
   RuntimeAttr runtime_default = object {
-    mem_gb: base_mem_gb,
-    disk_gb: ceil(base_disk_gb + uncompressed_input_size + compression_factor * compressed_input_size),
+    mem_gb: 2.0,
+    disk_gb: ceil(10.0 + 10.0 * size(vcf, "GiB")),
     cpu_cores: 1,
     preemptible_tries: 3,
     max_retries: 1,
@@ -315,52 +309,11 @@ task ResolvePrep {
 
   command <<<
     set -euxo pipefail
-    
-    # First, subset VCF to variants of interest
-    # -uncompress vcf
-    zcat "~{vcf}" > uncompressed.vcf
-    # -Extract vcf header:
-    #   search for first line not starting with '#', stop immediately,
-    #   take everything up to that point, then remove last line
-    ONLY_HEADER=false
-    grep -B9999999999 -m1 -Ev "^#" uncompressed.vcf | sed '$ d' > header.vcf \
-      || ONLY_HEADER=true
 
-    if $ONLY_HEADER; then
-      # filter is trivial, just copy the vcf
-      mv "~{vcf}" input.vcf.gz
-    else
-      rm -f "~{vcf}"
-
-      N_HEADER=$(wc -l < header.vcf)
-      # filter records, concatenate and zip
-      tail -n+$((N_HEADER+1)) uncompressed.vcf \
-        | { fgrep -wf ~{VIDs_list} || true; } \
-        | cat header.vcf - \
-        | bgzip -c \
-        > input.vcf.gz
-      rm -f uncompressed.vcf
-    fi
-
-    #Second, extract all-ref variants from VCF. These break svtk resolve with
-    # remote tabixing enabled
-    svtk vcf2bed input.vcf.gz input.bed
-    { grep -Ev "^#" input.bed || true ; } \
-      | awk -v FS="\t" '{ if ($6!="") print $4 }' \
-      > noref.VIDs.list
-
-    {
-      cat header.vcf;
-      zcat input.vcf.gz | fgrep -wf noref.VIDs.list || true;
-    } \
-      | vcf-sort \
-      | bgzip -c \
-      > noref.vcf.gz
-    rm -f header.vcf
-
-    #Third, use GATK to pull down the discfile chunks within ±2kb of all
+    #Use GATK to pull down the discfile chunks within ±2kb of all
     # INVERSION breakpoints, and bgzip / tabix
     echo "Forming regions.bed"
+    svtk vcf2bed input.vcf.gz input.bed
     { grep -Ev "^#" input.bed || true; } \
       | (fgrep INV || printf "") \
       | awk -v OFS="\t" -v buffer=2000 \
@@ -395,7 +348,7 @@ task ResolvePrep {
         rm ${SLICE}.PE.txt
       done < ~{write_lines(disc_files)}
     
-      #Fourth, merge PE files and add one artificial pair corresponding to the chromosome of interest
+      #Merge PE files and add one artificial pair corresponding to the chromosome of interest
       #This makes it so that svtk doesn't break downstream
       echo "Merging PE files"
       {
@@ -423,9 +376,6 @@ task ResolvePrep {
   >>>
 
   output {
-    File subsetted_vcf = "input.vcf.gz"
-    File noref_vcf = "noref.vcf.gz"
-    File noref_vids = "noref.VIDs.list"
     File merged_discfile = "discfile.PE.txt.gz"
     File merged_discfile_idx = "discfile.PE.txt.gz.tbi"
   }
@@ -434,7 +384,7 @@ task ResolvePrep {
 #Resolve complex SV
 task SvtkResolve {
   input {
-    File noref_vcf
+    File vcf
     String prefix
     String chrom
     File cytobands
@@ -455,7 +405,7 @@ task SvtkResolve {
   # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
   # be held in memory or disk while working, potentially in a form that takes up more space)
   Float input_size = size(
-    [noref_vcf, cytobands, mei_bed, pe_exclude_list, pe_exclude_list_idx,merged_discfile], "GiB")
+    [vcf, cytobands, mei_bed, pe_exclude_list, pe_exclude_list_idx,merged_discfile], "GiB")
   RuntimeAttr runtime_default = object {
     mem_gb: 3 + input_size * 10,
     disk_gb: ceil(10 + input_size * 12),
@@ -480,7 +430,7 @@ task SvtkResolve {
 
     #Run svtk resolve on variants after all-ref exclusion
     svtk resolve \
-      ~{noref_vcf} \
+      ~{vcf} \
       ~{resolved_vcf} \
       -p AllBatches_CPX_~{chrom} \
       -u ~{unresolved_vcf} \
@@ -500,12 +450,10 @@ task SvtkResolve {
   }  
 }
 
-task MergeResolve {
+task ReformatResolve {
   input {
-    File full_vcf
     File resolved_vcf
     String prefix
-    File noref_vids
     String sv_base_mini_docker
     RuntimeAttr? runtime_attr_override
   }
@@ -514,10 +462,11 @@ task MergeResolve {
 
   # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
   # be held in memory or disk while working, potentially in a form that takes up more space)
-  Float input_size = size([full_vcf, resolved_vcf, noref_vids], "GiB")
+  Float input_size = size(resolved_vcf, "GiB")
+  Float default_mem_gb = 3.75
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 3.75,
-                                  disk_gb: ceil(10 + input_size * 15),
+                                  mem_gb: default_mem_gb,
+                                  disk_gb: ceil(10 + input_size * 10),
                                   cpu_cores: 1,
                                   preemptible_tries: 1,
                                   max_retries: 1,
@@ -536,21 +485,21 @@ task MergeResolve {
 
   command <<<
     set -eu -o pipefail
-    #Add all-ref variants back into resolved VCF
-    #Note: requires modifying the INFO field with sed & awk given pysam C bug
-    zcat ~{full_vcf} \
-      | grep -Ev "^#" \
-      | awk 'ARGIND==1{inFileA[$1]; next} {if (!($3 in inFileA)) print }' ~{noref_vids} - OFS='\t' \
+    BCFTOOLS=/usr/local/bin/bcftools
+    mkdir -p tmp
+
+    #Note: modify the INFO field with sed & awk given pysam C bug
+    ${BCFTOOLS} view --no-version --no-header ~{resolved_vcf} \
       | sed -e 's/;MEMBERS=[^\t]*\t/\t/g' \
       | awk -v OFS="\t" '{ $8=$8";MEMBERS="$3; print }' \
-      | cat <(zcat ~{resolved_vcf}) - \
-      | vcf-sort \
-      | bgzip \
-      > ~{out_vcf}
+      | cat <(${BCFTOOLS} view --no-version --header-only ~{resolved_vcf}) - \
+      | ${BCFTOOLS} sort -T tmp -Oz -o ~{out_vcf}
+    tabix ~{out_vcf}
   >>>
 
   output {
     File out = out_vcf
+    File out_index = "~{out_vcf}.tbi"
   }
 }
 

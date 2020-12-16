@@ -4,6 +4,7 @@ version 1.0
 
 import "Structs.wdl"
 import "TasksMakeCohortVcf.wdl" as MiniTasks
+import "HailMerge.wdl" as HailMerge
 import "Utils.wdl" as utils
 
 # Workflow to shard a filtered vcf & run vcfcluster (sub-sub-sub workflow)
@@ -21,6 +22,9 @@ workflow ShardedCluster {
     Array[String] sv_types
     Float merging_shard_scale_factor = 30000000
 
+    File hail_script
+    String project
+
     String sv_pipeline_docker
     String sv_base_mini_docker
 
@@ -28,7 +32,8 @@ workflow ShardedCluster {
     File? NONE_FILE_
 
     # overrides for local tasks
-    RuntimeAttr? runtime_override_shard_vcf_precluster
+    RuntimeAttr? runtime_override_shard_clusters
+    RuntimeAttr? runtime_override_shard_vids
     RuntimeAttr? runtime_override_pull_vcf_shard
     RuntimeAttr? runtime_override_svtk_vcf_cluster
     RuntimeAttr? runtime_override_get_vcf_header_with_members_info_line
@@ -67,7 +72,7 @@ workflow ShardedCluster {
       svsize=sv_size,
       sv_types=sv_types,
       sv_pipeline_docker=sv_pipeline_docker,
-      runtime_attr_override=runtime_override_svtk_vcf_cluster
+      runtime_attr_override=runtime_override_shard_clusters
   }
 
   call MiniTasks.ShardVids {
@@ -76,12 +81,12 @@ workflow ShardedCluster {
       prefix=prefix,
       records_per_shard=merge_shard_size,
       sv_pipeline_docker=sv_pipeline_docker,
-      runtime_attr_override=runtime_override_svtk_vcf_cluster
+      runtime_attr_override=runtime_override_shard_vids
   }
 
   #Run vcfcluster per shard
   scatter (i in range(length(ShardVids.out))) {
-    call PullVcfShard {
+    call MiniTasks.PullVcfShard {
       input:
         vcf=vcf,
         vids=ShardVids.out[i],
@@ -125,21 +130,20 @@ workflow ShardedCluster {
     }
   }
   if (length(SvtkVcfCluster.out) > 0) {
-    call MiniTasks.ConcatVcfs {
+    call HailMerge.HailMerge as ConcatVcfs {
       input:
         vcfs=SortVcf.out,
-        vcfs_idx=SortVcf.out_index,
-        allow_overlaps=true,
-        outfile_prefix="~{prefix}.clustered",
-        sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_concat_sharded_cluster
+        prefix="~{prefix}.clustered",
+        hail_script=hail_script,
+        project=project,
+        sv_base_mini_docker=sv_base_mini_docker
     }
   }
 
   #Output
   output {
-    File clustered_vcf = select_first([GetVcfHeaderWithMembersInfoLine.out, ConcatVcfs.concat_vcf])
-    File clustered_vcf_idx = select_first([GetVcfHeaderWithMembersInfoLine.out_idx, ConcatVcfs.concat_vcf_idx])
+    File clustered_vcf = select_first([GetVcfHeaderWithMembersInfoLine.out, ConcatVcfs.merged_vcf])
+    File clustered_vcf_idx = select_first([GetVcfHeaderWithMembersInfoLine.out_idx, ConcatVcfs.merged_vcf_index])
   }
 }
 
@@ -244,47 +248,6 @@ task ShardClusters {
 
   output {
     File out = "~{prefix}.vcf.gz"
-  }
-}
-
-task PullVcfShard {
-  input {
-    File vcf
-    File vids
-    String prefix
-    String sv_base_mini_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  String output_prefix = "~{prefix}"
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: 3.75,
-                                  disk_gb: ceil(10.0 + size(vcf, "GiB") * 2.0),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 3,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_base_mini_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euo pipefail
-    bcftools view --no-version --include ID=@~{vids} ~{vcf} -O z -o ~{output_prefix}.vcf.gz
-    wc -l < ~{vids} > count.txt
-  >>>
-
-  output {
-    File out = "~{output_prefix}.vcf.gz"
-    Int count = read_int("count.txt")
   }
 }
 
