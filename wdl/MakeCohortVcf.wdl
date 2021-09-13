@@ -108,6 +108,7 @@ workflow MakeCohortVcf {
     RuntimeAttr? runtime_override_concat_vcf_cluster
     RuntimeAttr? runtime_override_concat_svtypes
     RuntimeAttr? runtime_override_concat_sharded_cluster
+    RuntimeAttr? runtime_override_make_sites_only
 
     # overrides for ResolveComplexContig
     RuntimeAttr? runtime_override_update_sr_list_pass
@@ -228,7 +229,8 @@ workflow MakeCohortVcf {
       runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
       runtime_override_concat_vcf_cluster=runtime_override_concat_vcf_cluster,
       runtime_override_concat_svtypes=runtime_override_concat_svtypes,
-      runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster
+      runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
+      runtime_override_make_sites_only=runtime_override_make_sites_only
   }
 
   call ComplexResolve.ResolveComplexVariants {

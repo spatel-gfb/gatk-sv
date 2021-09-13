@@ -3,6 +3,8 @@ version 1.0
 import "VcfClusterSingleChromsome.wdl" as VcfClusterContig
 import "TasksMakeCohortVcf.wdl" as MiniTasks
 import "HailMerge.wdl" as HailMerge
+import "MergePesrDepth.wdl" as MergePesrDepth
+import "Utils.wdl" as Utils
 
 workflow CombineBatches {
   input {
@@ -34,14 +36,15 @@ workflow CombineBatches {
     # overrides for local tasks
     RuntimeAttr? runtime_override_update_sr_list
     RuntimeAttr? runtime_override_merge_pesr_depth
+    RuntimeAttr? runtime_override_pull_header
 
     # overrides for mini tasks
     RuntimeAttr? runtime_override_clean_bothside_pass
     RuntimeAttr? runtime_override_clean_background_fail
     RuntimeAttr? runtime_override_concat
-    RuntimeAttr? runtime_override_sort_pesr_depth_merged_vcf
     RuntimeAttr? runtime_override_concat_pesr_depth
     RuntimeAttr? runtime_override_update_fix_pesr_header
+    RuntimeAttr? runtime_override_count_samples
 
     # overrides for VcfClusterContig
     RuntimeAttr? runtime_override_localize_vcfs
@@ -59,6 +62,19 @@ workflow CombineBatches {
     RuntimeAttr? runtime_override_concat_vcf_cluster
     RuntimeAttr? runtime_override_concat_svtypes
     RuntimeAttr? runtime_override_concat_sharded_cluster
+    RuntimeAttr? runtime_override_make_sites_only
+
+    # overerides for merge pesr depth
+    RuntimeAttr? runtime_override_mpd_shard_clusters
+    RuntimeAttr? runtime_override_mpd_shard_vids
+    RuntimeAttr? runtime_override_mpd_pull_vcf_shard
+    RuntimeAttr? runtime_override_merge_pesr_depth
+    RuntimeAttr? runtime_override_mpd_sort_merged_vcf
+    RuntimeAttr? runtime_override_mpd_subset_small
+    RuntimeAttr? runtime_override_mpd_subset_large
+    RuntimeAttr? runtime_override_mpd_make_sites_only
+    RuntimeAttr? runtime_override_mpd_reheader
+
   }
 
   # Preprocess some inputs
@@ -82,6 +98,13 @@ workflow CombineBatches {
       runtime_attr_override=runtime_override_clean_background_fail
   }
 
+  call Utils.CountSamples {
+    input:
+      vcf=depth_vcfs[0],
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_attr_override=runtime_override_count_samples
+  }
+
   #Scatter per chromosome
   Array[String] contigs = transpose(read_tsv(contig_list))[0]
   scatter ( contig in contigs ) {
@@ -92,6 +115,7 @@ workflow CombineBatches {
     call VcfClusterContig.VcfClusterSingleChrom as ClusterPesr {
       input:
         vcfs=pesr_vcfs,
+        num_samples=CountSamples.num_samples,
         batches=batches,
         prefix="~{cohort_name}.~{contig}.pesr",
         dist=300,
@@ -101,6 +125,7 @@ workflow CombineBatches {
         sv_size=50,
         sv_types=["DEL","DUP","INV","BND","INS"],
         contig=contig,
+        cohort_name=cohort_name,
         localize_shard_size=localize_shard_size,
         subset_sr_lists=true,
         bothside_pass=CleanBothsidePass.outfile,
@@ -124,13 +149,15 @@ workflow CombineBatches {
         runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
         runtime_override_concat_vcf_cluster=runtime_override_concat_vcf_cluster,
         runtime_override_concat_svtypes=runtime_override_concat_svtypes,
-        runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster
+        runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
+        runtime_override_make_sites_only=runtime_override_make_sites_only
     }
 
     #Subset RD VCFs to single chromosome & cluster
     call VcfClusterContig.VcfClusterSingleChrom as ClusterDepth {
       input:
         vcfs=depth_vcfs,
+        num_samples=CountSamples.num_samples,
         batches=batches,
         prefix="~{cohort_name}.~{contig}.depth",
         dist=500000,
@@ -140,6 +167,7 @@ workflow CombineBatches {
         sv_size=5000,
         sv_types=["DEL","DUP"],
         contig=contig,
+        cohort_name=cohort_name,
         localize_shard_size=localize_shard_size,
         subset_sr_lists=false,
         bothside_pass=CleanBothsidePass.outfile,
@@ -162,13 +190,26 @@ workflow CombineBatches {
         runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
         runtime_override_concat_vcf_cluster=runtime_override_concat_vcf_cluster,
         runtime_override_concat_svtypes=runtime_override_concat_svtypes,
-        runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster
+        runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
+        runtime_override_make_sites_only=runtime_override_make_sites_only
+    }
+
+    call MiniTasks.ConcatVcfs as ConcatPesrSitesOnly {
+      input:
+        vcfs=ClusterPesr.clustered_vcfs,
+        vcfs_idx=ClusterPesr.clustered_vcf_indexes,
+        naive=true,
+        generate_index=false,
+        sites_only=true,
+        outfile_prefix="~{cohort_name}.clustered_pesr.sites_only",
+        sv_base_mini_docker=sv_base_mini_docker,
+        runtime_attr_override=runtime_override_concat
     }
 
     #Update SR background fail & bothside pass files (1)
     call MiniTasks.UpdateSrList as UpdateBackgroundFailFirst {
       input:
-        vcf=ClusterPesr.clustered_vcf,
+        vcf=ConcatPesrSitesOnly.concat_vcf,
         original_list=ClusterPesr.filtered_background_fail,
         outfile="~{cohort_name}.~{contig}.sr_background_fail.updated.txt",
         sv_pipeline_docker=sv_pipeline_docker,
@@ -176,53 +217,83 @@ workflow CombineBatches {
     }
     call MiniTasks.UpdateSrList as UpdateBothsidePassFirst {
       input:
-        vcf=ClusterPesr.clustered_vcf,
+        vcf=ConcatPesrSitesOnly.concat_vcf,
         original_list=ClusterPesr.filtered_bothside_pass,
         outfile="~{cohort_name}.~{contig}.sr_bothside_pass.updated.txt",
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_override=runtime_override_update_sr_list
     }
 
-    #Hail merge fails due to extra INFO fields in the pesr vcf header
-    call HarmonizeHeader {
+    ## DUP vcf [1] smallest of the depth vcfs
+    call PullHeader {
       input:
-        vcf=ClusterPesr.clustered_vcf,
-        vcf_index=ClusterPesr.clustered_vcf_idx,
-        vcf_header=ClusterDepth.clustered_vcf,
-        prefix="~{cohort_name}.~{contig}.pesr.harmonize_header",
+        vcf=ClusterDepth.clustered_vcfs[1],
+        prefix="~{cohort_name}.~{contig}.depth",
         sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_update_fix_pesr_header
+        runtime_attr_override=runtime_override_pull_header
+    }
+
+    call MergePesrDepth.MergePesrDepth as MergeDeletions {
+      input:
+        subtyped_pesr_vcf=ClusterPesr.clustered_vcfs[0],
+        subtyped_depth_vcf=ClusterDepth.clustered_vcfs[0],
+        svtype="DEL",
+        header=PullHeader.out,
+        num_samples=CountSamples.num_samples,
+        prefix="~{cohort_name}.~{contig}.merge_del",
+        contig=contig,
+        project=project,
+        hail_script=hail_script,
+        sv_base_mini_docker=sv_base_mini_docker,
+        sv_pipeline_docker=sv_pipeline_docker,
+        runtime_override_shard_clusters=runtime_override_mpd_shard_clusters,
+        runtime_override_shard_vids=runtime_override_mpd_shard_vids,
+        runtime_override_pull_vcf_shard=runtime_override_mpd_pull_vcf_shard,
+        runtime_override_merge_pesr_depth=runtime_override_merge_pesr_depth,
+        runtime_override_sort_merged_vcf=runtime_override_mpd_sort_merged_vcf,
+        runtime_override_subset_small=runtime_override_mpd_subset_small,
+        runtime_override_subset_large=runtime_override_mpd_subset_large,
+        runtime_override_make_sites_only=runtime_override_mpd_make_sites_only,
+        runtime_override_reheader=runtime_override_mpd_reheader
+    }
+
+    call MergePesrDepth.MergePesrDepth as MergeDuplications {
+      input:
+        subtyped_pesr_vcf=ClusterPesr.clustered_vcfs[1],
+        subtyped_depth_vcf=ClusterDepth.clustered_vcfs[1],
+        svtype="DUP",
+        header=PullHeader.out,
+        num_samples=CountSamples.num_samples,
+        prefix="~{cohort_name}.~{contig}.merge_dup",
+        contig=contig,
+        project=project,
+        hail_script=hail_script,
+        sv_base_mini_docker=sv_base_mini_docker,
+        sv_pipeline_docker=sv_pipeline_docker,
+        runtime_override_shard_clusters=runtime_override_mpd_shard_clusters,
+        runtime_override_shard_vids=runtime_override_mpd_shard_vids,
+        runtime_override_pull_vcf_shard=runtime_override_mpd_pull_vcf_shard,
+        runtime_override_merge_pesr_depth=runtime_override_merge_pesr_depth,
+        runtime_override_sort_merged_vcf=runtime_override_mpd_sort_merged_vcf,
+        runtime_override_subset_small=runtime_override_mpd_subset_small,
+        runtime_override_subset_large=runtime_override_mpd_subset_large,
+        runtime_override_make_sites_only=runtime_override_mpd_make_sites_only,
+        runtime_override_reheader=runtime_override_mpd_reheader
     }
     #Merge PESR & RD VCFs
     call HailMerge.HailMerge as ConcatPesrDepth {
       input:
-        vcfs=[HarmonizeHeader.out, ClusterDepth.clustered_vcf],
+        vcfs=[MergeDeletions.out, MergeDuplications.out, ClusterPesr.clustered_vcfs[2], ClusterPesr.clustered_vcfs[3], ClusterPesr.clustered_vcfs[4]],
         prefix="~{cohort_name}.~{contig}.concat_pesr_depth",
         hail_script=hail_script,
         project=project,
         sv_base_mini_docker=sv_base_mini_docker
     }
-    call MergePesrDepth {
-      input:
-        vcf=ConcatPesrDepth.merged_vcf,
-        vcf_index=ConcatPesrDepth.merged_vcf_index,
-        contig=contig,
-        prefix="~{cohort_name}.~{contig}.merge_pesr_depth",
-        sv_pipeline_docker=sv_pipeline_docker,
-        runtime_attr_override=runtime_override_merge_pesr_depth
-    }
-    call MiniTasks.SortVcf as SortMergePesrDepth {
-      input:
-        vcf = MergePesrDepth.merged_vcf,
-        outfile_prefix = "~{cohort_name}.~{contig}.sort_pesr_depth",
-        sv_base_mini_docker = sv_base_mini_docker,
-        runtime_attr_override = runtime_override_sort_pesr_depth_merged_vcf
-    }
 
     #Update SR background fail & bothside pass files (2)
     call MiniTasks.UpdateSrList as UpdateBackgroundFailSecond {
       input:
-        vcf=SortMergePesrDepth.out,
+        vcf=ConcatPesrDepth.merged_vcf,
         original_list=UpdateBackgroundFailFirst.updated_list,
         outfile="~{cohort_name}.~{contig}.sr_background_fail.updated2.txt",
         sv_pipeline_docker=sv_pipeline_docker,
@@ -230,7 +301,7 @@ workflow CombineBatches {
     }
     call MiniTasks.UpdateSrList as UpdateBothsidePassSecond {
       input:
-        vcf=SortMergePesrDepth.out,
+        vcf=ConcatPesrDepth.merged_vcf,
         original_list=UpdateBothsidePassFirst.updated_list,
         outfile="~{cohort_name}.~{contig}.sr_bothside_pass.updated2.txt",
         sv_pipeline_docker=sv_pipeline_docker,
@@ -242,8 +313,8 @@ workflow CombineBatches {
   if (merge_vcfs) {
     call MiniTasks.ConcatVcfs {
       input:
-        vcfs=SortMergePesrDepth.out,
-        vcfs_idx=SortMergePesrDepth.out_index,
+        vcfs=ConcatPesrDepth.merged_vcf,
+        vcfs_idx=ConcatPesrDepth.merged_vcf_index,
         naive=true,
         outfile_prefix="~{cohort_name}.combine_batches",
         sv_base_mini_docker=sv_base_mini_docker,
@@ -253,8 +324,8 @@ workflow CombineBatches {
 
   #Final outputs
   output {
-    Array[File] vcfs = SortMergePesrDepth.out
-    Array[File] vcf_indexes = SortMergePesrDepth.out_index
+    Array[File] vcfs = ConcatPesrDepth.merged_vcf
+    Array[File] vcf_indexes = ConcatPesrDepth.merged_vcf_index
     Array[File] cluster_bothside_pass_lists = UpdateBothsidePassSecond.updated_list
     Array[File] cluster_background_fail_lists = UpdateBackgroundFailSecond.updated_list
     File? merged_vcf = ConcatVcfs.concat_vcf
@@ -262,66 +333,18 @@ workflow CombineBatches {
   }
 }
 
-task MergePesrDepth {
+
+task PullHeader {
   input {
     File vcf
-    File vcf_index
-    String prefix
-    String contig
-    String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  String output_file = prefix + ".vcf.gz"
-
-  # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
-  # be held in memory or disk while working, potentially in a form that takes up more space)
-  Float input_size = size(vcf, "GiB")
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0 + 0.6 * input_size,
-                                  disk_gb: ceil(10.0 + 6 * input_size),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 3,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} SSD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_pipeline_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euo pipefail
-    /opt/sv-pipeline/04_variant_resolution/scripts/merge_pesr_depth.py \
-    --prefix pesr_depth_merged_~{contig} \
-    ~{vcf} \
-    ~{output_file}
-  >>>
-
-  output {
-    File merged_vcf = output_file
-  }
-}
-
-task HarmonizeHeader {
-  input {
-    File vcf
-    File vcf_index
-    File vcf_header
     String prefix
     String sv_base_mini_docker
     RuntimeAttr? runtime_attr_override
   }
 
   RuntimeAttr runtime_default = object {
-                                  mem_gb: 3.5,
-                                  disk_gb: ceil(10.0 + 2 * size(vcf, "GiB") + size(vcf_header, "GiB")),
+                                  mem_gb: 2.0,
+                                  disk_gb: ceil(10.0 + size(vcf, "GiB") ),
                                   cpu_cores: 1,
                                   preemptible_tries: 3,
                                   max_retries: 1,
@@ -340,13 +363,10 @@ task HarmonizeHeader {
 
   command <<<
     set -euo pipefail
-    bcftools view --header-only ~{vcf_header} > header
-    bcftools reheader --header header ~{vcf} > ~{prefix}.vcf.gz
-    tabix ~{prefix}.vcf.gz
+    bcftools view --header-only ~{vcf} > ~{prefix}.header
   >>>
 
   output {
-    File out = "~{prefix}.vcf.gz"
-    File out_index = "~{prefix}.vcf.gz.tbi"
+    File out = "~{prefix}.header"
   }
 }

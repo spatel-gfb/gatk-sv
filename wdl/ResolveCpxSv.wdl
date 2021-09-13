@@ -60,7 +60,7 @@ workflow ResolveComplexSv {
       runtime_attr_override=runtime_override_shard_vcf_cpx
   }
 
-  call MiniTasks.ShardVids {
+  call MiniTasks.ShardVidsForClustering {
     input:
       clustered_vcf=ShardVcfCpx.out,
       prefix=prefix,
@@ -69,7 +69,7 @@ workflow ResolveComplexSv {
       runtime_attr_override=runtime_override_shard_vids
   }
 
-  if (length(ShardVids.out) > 0) {
+  if (length(ShardVidsForClustering.out) > 0) {
 
     # Get SR count cutoff from RF metrics to use in single-ender rescan procedure
     call GetSeCutoff {
@@ -80,12 +80,12 @@ workflow ResolveComplexSv {
     }
 
     #Scatter over shards and resolve variants per shard
-    scatter ( i in range(length(ShardVids.out)) ) {
+    scatter ( i in range(length(ShardVidsForClustering.out)) ) {
 
       call MiniTasks.PullVcfShard {
         input:
           vcf=vcf,
-          vids=ShardVids.out[i],
+          vids=ShardVidsForClustering.out[i],
           prefix="~{prefix}.shard_${i}",
           sv_base_mini_docker=sv_base_mini_docker,
           runtime_attr_override=runtime_override_pull_vcf_shard
@@ -121,18 +121,10 @@ workflow ResolveComplexSv {
           runtime_attr_override=runtime_override_resolve_cpx_per_shard
       }
 
-      call ReformatResolve {
-        input:
-          resolved_vcf=SvtkResolve.rs_vcf,
-          prefix="~{prefix}.merge_resolve.shard_~{i}",
-          sv_base_mini_docker=sv_base_mini_docker,
-          runtime_attr_override=runtime_override_merge_resolve_inner
-      }
-
       #Add unresolved variants back into resolved VCF
       call RestoreUnresolvedCnv {
         input:
-          resolved_vcf=ReformatResolve.out,
+          resolved_vcf=SvtkResolve.rs_vcf,
           unresolved_vcf=SvtkResolve.un_vcf,
           prefix="~{prefix}.restore_unresolved.shard_~{i}",
           sv_pipeline_docker=sv_pipeline_docker,
@@ -313,8 +305,8 @@ task ResolvePrep {
     #Use GATK to pull down the discfile chunks within ±2kb of all
     # INVERSION breakpoints, and bgzip / tabix
     echo "Forming regions.bed"
-    svtk vcf2bed input.vcf.gz input.bed
-    { grep -Ev "^#" input.bed || true; } \
+    svtk vcf2bed ~{vcf} input.bed --no-samples --no-header
+    cat input.bed \
       | (fgrep INV || printf "") \
       | awk -v OFS="\t" -v buffer=2000 \
         '{ print $1, $2-buffer, $2+buffer"\n"$1, $3-buffer, $3+buffer }' \
@@ -450,59 +442,6 @@ task SvtkResolve {
   }  
 }
 
-task ReformatResolve {
-  input {
-    File resolved_vcf
-    String prefix
-    String sv_base_mini_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  String out_vcf = "~{prefix}.resolved.vcf.gz"
-
-  # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
-  # be held in memory or disk while working, potentially in a form that takes up more space)
-  Float input_size = size(resolved_vcf, "GiB")
-  Float default_mem_gb = 3.75
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: default_mem_gb,
-                                  disk_gb: ceil(10 + input_size * 10),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 1,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_base_mini_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -eu -o pipefail
-    BCFTOOLS=/usr/local/bin/bcftools
-    mkdir -p tmp
-
-    #Note: modify the INFO field with sed & awk given pysam C bug
-    ${BCFTOOLS} view --no-version --no-header ~{resolved_vcf} \
-      | sed -e 's/;MEMBERS=[^\t]*\t/\t/g' \
-      | awk -v OFS="\t" '{ $8=$8";MEMBERS="$3; print }' \
-      | cat <(${BCFTOOLS} view --no-version --header-only ~{resolved_vcf}) - \
-      | ${BCFTOOLS} sort -T tmp -Oz -o ~{out_vcf}
-    tabix ~{out_vcf}
-  >>>
-
-  output {
-    File out = out_vcf
-    File out_index = "~{out_vcf}.tbi"
-  }
-}
-
 #Restore unresolved CNVs to resolved VCF
 task RestoreUnresolvedCnv {
   input {
@@ -520,7 +459,7 @@ task RestoreUnresolvedCnv {
   Float input_size = size([resolved_vcf, unresolved_vcf], "GiB")
   RuntimeAttr runtime_default = object {
     mem_gb: 2.0,
-    disk_gb: ceil(10 + input_size * 20),
+    disk_gb: ceil(10 + input_size * 4),
     cpu_cores: 1,
     preemptible_tries: 3,
     max_retries: 1,
@@ -538,47 +477,47 @@ task RestoreUnresolvedCnv {
   }
 
   command <<<
-    set -eu -o pipefail
+    set -euo pipefail
 
     # get unresolved records
-    zcat ~{unresolved_vcf} \
-      | (grep -v "^#" || printf "") \
-      > unresolved_records.vcf
+    bcftools view --no-header ~{unresolved_vcf} -Oz -o unresolved_records.vcf.gz
     rm "~{unresolved_vcf}"
 
     # avoid possible obliteration of input file during later processing by writing
     # to temporary file (and postCPX_cleanup.py writing final result to output name)
-    zcat ~{resolved_vcf} > ~{resolved_plus_cnv}.tmp
-    rm ~{resolved_vcf}
+    mv ~{resolved_vcf} ~{resolved_plus_cnv}.tmp.gz
 
     #Add unresolved CNVs to resolved VCF and wipe unresolved status
-    cat unresolved_records.vcf \
+    zcat unresolved_records.vcf.gz \
       | (fgrep -e "<DEL>" -e "<DUP>" -e "SVTYPE=DEL" -e "SVTYPE=DUP" -e "SVTYPE=CNV" -e "SVTYPE=MCNV" || printf "") \
       | sed -r -e 's/;EVENT=[^;]*;/;/' -e 's/;UNRESOLVED[^;]*;/;/g' \
       | sed -r -e 's/;UNRESOLVED_TYPE[^;]*;/;/g' -e 's/;UNRESOLVED_TYPE[^\t]*\t/\t/g' \
-      >> ~{resolved_plus_cnv}.tmp
+      | bgzip \
+      >> ~{resolved_plus_cnv}.tmp.gz
 
     #Add other unresolved variants & retain unresolved status (except for inversion single enders)
-    cat unresolved_records.vcf \
+    zcat unresolved_records.vcf.gz \
       | (fgrep -v -e "<DEL>" -e "<DUP>" -e "SVTYPE=DEL" -e "SVTYPE=DUP" -e "SVTYPE=CNV" -e "SVTYPE=MCNV" \
                   -e "INVERSION_SINGLE_ENDER" || printf "") \
-      >> ~{resolved_plus_cnv}.tmp
+      | bgzip \
+      >> ~{resolved_plus_cnv}.tmp.gz
 
     #Add inversion single enders as SVTYPE=BND
-    cat unresolved_records.vcf \
+    zcat unresolved_records.vcf.gz \
       | (fgrep -v -e "<DEL>" -e "<DUP>" -e "SVTYPE=DEL" -e "SVTYPE=DUP" -e "SVTYPE=CNV" -e "SVTYPE=MCNV" || printf "") \
       | (fgrep -e "INVERSION_SINGLE_ENDER" || printf "") \
       | sed -e 's/SVTYPE=INV/SVTYPE=BND/g' \
       | sed -e 's/END=\([0-9]*\)/END=\1;END2=\1/' \
-      >> ~{resolved_plus_cnv}.tmp
-    rm unresolved_records.vcf
+      | bgzip \
+      >> ~{resolved_plus_cnv}.tmp.gz
+    rm unresolved_records.vcf.gz
 
     #Sort, clean, and compress
-    cat ~{resolved_plus_cnv}.tmp \
+    zcat ~{resolved_plus_cnv}.tmp.gz \
       | vcf-sort -c \
       | /opt/sv-pipeline/04_variant_resolution/scripts/postCPX_cleanup.py \
         /dev/stdin /dev/stdout \
-      | bgzip -c \
+      | bgzip \
       > ~{resolved_plus_cnv}
     tabix ~{resolved_plus_cnv}
   >>>

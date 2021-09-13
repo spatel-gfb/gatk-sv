@@ -11,7 +11,9 @@ workflow ClusterSingleChrom {
   input {
     File vcf
     File vcf_index
+    Int num_samples
     String contig
+    String cohort_name
     String prefix
     Int dist
     Float frac
@@ -19,6 +21,7 @@ workflow ClusterSingleChrom {
     File? exclude_list
     Int sv_size
     Array[String] sv_types
+    File empty_file
 
     File hail_script
     String project
@@ -28,6 +31,7 @@ workflow ClusterSingleChrom {
 
     # overrides for MiniTasks
     RuntimeAttr? runtime_override_subset_sv_type
+    RuntimeAttr? runtime_override_cat_vid_lists_chrom
 
     # overrides for ShardedCluster
     RuntimeAttr? runtime_override_shard_clusters
@@ -37,6 +41,8 @@ workflow ClusterSingleChrom {
     RuntimeAttr? runtime_override_get_vcf_header_with_members_info_line
     RuntimeAttr? runtime_override_concat_svtypes
     RuntimeAttr? runtime_override_concat_sharded_cluster
+    RuntimeAttr? runtime_override_cat_vid_lists_sharded
+    RuntimeAttr? runtime_override_make_sites_only
   }
 
   #Scatter over svtypes
@@ -55,18 +61,21 @@ workflow ClusterSingleChrom {
     }
 
     #For each svtype, intelligently shard VCF for clustering
-    call ShardedCluster.ShardedCluster as ShardedCluster {
+    call ShardedCluster.ShardedCluster {
       input:
         vcf=SubsetSvType.filtered_vcf,
+        num_samples=num_samples,
         dist=dist,
         frac=frac,
         prefix="~{prefix}.~{sv_type}",
+        cohort_name=cohort_name,
         contig=contig,
         sv_type=sv_type,
         sample_overlap=sample_overlap,
         exclude_list=exclude_list,
         sv_size=sv_size,
         sv_types=sv_types,
+        empty_file=empty_file,
         hail_script=hail_script,
         project=project,
         sv_pipeline_docker=sv_pipeline_docker,
@@ -76,86 +85,34 @@ workflow ClusterSingleChrom {
         runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
         runtime_override_svtk_vcf_cluster=runtime_override_svtk_vcf_cluster,
         runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
-        runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster
+        runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
+        runtime_override_cat_vid_lists_sharded=runtime_override_cat_vid_lists_sharded,
+        runtime_override_make_sites_only=runtime_override_make_sites_only
     }
-    call RenameVariants {
-      input:
-        vcf=ShardedCluster.clustered_vcf,
-        vcf_index=ShardedCluster.clustered_vcf_idx,
-        prefix=prefix,
-        contig=contig,
-        sv_pipeline_docker=sv_pipeline_docker,
-        runtime_attr_override=runtime_override_concat_svtypes
-    }
+  }
+
+  call MiniTasks.CatUncompressedFiles as CatVidListsChrom {
+    input:
+    shards=ShardedCluster.clustered_vids_list,
+    outfile_name="~{prefix}.clustered.vids.list",
+    sv_base_mini_docker=sv_base_mini_docker,
+    runtime_attr_override=runtime_override_cat_vid_lists_chrom
   }
 
   #Merge svtypes
-  call HailMerge.HailMerge as ConcatSvTypes {
-    input:
-      vcfs=RenameVariants.out,
-      prefix="~{prefix}.~{contig}.concat_svtypes",
-      hail_script=hail_script,
-      project=project,
-      sv_base_mini_docker=sv_base_mini_docker
-  }
+  #call HailMerge.HailMerge as ConcatSvTypes {
+  #  input:
+  #    vcfs=RenameVariants.out,
+  #    prefix="~{prefix}.~{contig}.concat_svtypes",
+  #    hail_script=hail_script,
+  #    project=project,
+  #    sv_base_mini_docker=sv_base_mini_docker
+  #}
 
   #Output clustered vcf
   output {
-    File clustered_vcf = ConcatSvTypes.merged_vcf
-    File clustered_vcf_idx = ConcatSvTypes.merged_vcf_index
-  }
-}
-
-task RenameVariants {
-  input {
-    File vcf
-    File vcf_index
-    String prefix
-    String contig
-
-    String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  String vcf_name = prefix + "." + contig + ".renamed.vcf.gz"
-
-  # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
-  # be held in memory or disk while working, potentially in a form that takes up more space)
-  Float input_size = size(vcf, "GiB")
-  RuntimeAttr runtime_default = object {
-    mem_gb: 3.75,
-    disk_gb: ceil(10.0 + 2.0 * input_size),
-    cpu_cores: 1,
-    preemptible_tries: 3,
-    max_retries: 1,
-    boot_disk_gb: 10
-  }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_pipeline_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euo pipefail
-
-    /opt/sv-pipeline/04_variant_resolution/scripts/rename_after_vcfcluster.py \
-      --chrom ~{contig} \
-      --prefix ~{prefix} \
-      ~{vcf} - \
-      | bgzip -c \
-      > ~{vcf_name}
-
-    tabix -p vcf -f ~{vcf_name}
-  >>>
-
-  output {
-    File out = vcf_name
-    File out_index = vcf_name + ".tbi"
+    Array[File] clustered_vcfs = ShardedCluster.clustered_vcf
+    Array[File] clustered_vcf_indexes = ShardedCluster.clustered_vcf_idx
+    File clustered_vids_list = CatVidListsChrom.outfile
   }
 }
