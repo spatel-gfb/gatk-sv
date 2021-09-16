@@ -10,10 +10,10 @@ workflow MergePesrDepth {
     input {
         File subtyped_pesr_vcf
         File subtyped_depth_vcf
-        File header
         Int num_samples
 
         String prefix
+        String cohort_name
         String svtype
         String contig
         Float merging_shard_scale_factor = 30000000
@@ -35,17 +35,6 @@ workflow MergePesrDepth {
         RuntimeAttr? runtime_override_subset_small
         RuntimeAttr? runtime_override_subset_large
         RuntimeAttr? runtime_override_make_sites_only
-        RuntimeAttr? runtime_override_reheader
-    }
-
-    call MiniTasks.ReheaderVcf {
-        input:
-            vcf=subtyped_pesr_vcf,
-            vcf_index=subtyped_pesr_vcf + ".tbi",
-            header=header,
-            prefix="~{prefix}.reheadered",
-            sv_base_mini_docker=sv_base_mini_docker,
-            runtime_attr_override=runtime_override_reheader
     }
 
     # Pull out CNVs too small to cluster (less than reciprocal_overlap_fraction * min_depth_only_length)
@@ -71,10 +60,10 @@ workflow MergePesrDepth {
             runtime_attr_override=runtime_override_subset_large
     }
 
-    call HailMerge.HailMerge as ConcatPesrDepth {
+    call HailMerge.HailMerge as ConcatLargePesrDepth {
         input:
             vcfs=[SubsetLarge.filtered_vcf, subtyped_depth_vcf],
-            prefix="~{prefix}.unmerged",
+            prefix="~{prefix}.large_pesr_depth",
             hail_script=hail_script,
             project=project,
             sv_base_mini_docker=sv_base_mini_docker
@@ -82,9 +71,9 @@ workflow MergePesrDepth {
 
     call MiniTasks.MakeSitesOnlyVcf {
         input:
-            vcf=ConcatPesrDepth.merged_vcf,
-            vcf_index=subtyped_pesr_vcf + ".tbi",
-            prefix="~{prefix}.unmerged.sites_only",
+            vcf=ConcatLargePesrDepth.merged_vcf,
+            vcf_index=ConcatLargePesrDepth.merged_vcf_index,
+            prefix="~{prefix}.large_pesr_depth.sites_only",
             sv_base_mini_docker=sv_base_mini_docker,
             runtime_attr_override=runtime_override_make_sites_only
     }
@@ -115,7 +104,7 @@ workflow MergePesrDepth {
     scatter (i in range(length(ShardVidsForClustering.out))) {
         call MiniTasks.PullVcfShard {
             input:
-                vcf=ConcatPesrDepth.merged_vcf,
+                vcf=ConcatLargePesrDepth.merged_vcf,
                 vids=ShardVidsForClustering.out[i],
                 prefix="~{prefix}.unclustered.shard_${i}",
                 sv_base_mini_docker=sv_base_mini_docker,
@@ -126,7 +115,7 @@ workflow MergePesrDepth {
                 vcf=PullVcfShard.out,
                 vcf_index=PullVcfShard.out_index,
                 prefix="~{prefix}.merge_pesr_depth.shard_~{i}",
-                contig=contig,
+                vid_prefix="~{cohort_name}_~{contig}_mpd~{i}",
                 sv_pipeline_docker=sv_pipeline_docker,
                 runtime_attr_override=runtime_override_merge_pesr_depth
         }
@@ -160,7 +149,7 @@ task MergePesrDepthShard {
         File vcf
         File vcf_index
         String prefix
-        String contig
+        String vid_prefix
         String sv_pipeline_docker
         RuntimeAttr? runtime_attr_override
     }
@@ -192,53 +181,12 @@ task MergePesrDepthShard {
     command <<<
         set -euo pipefail
         /opt/sv-pipeline/04_variant_resolution/scripts/merge_pesr_depth.py \
-            --prefix pesr_depth_merged_~{contig} \
+            --prefix ~{vid_prefix} \
             ~{vcf} \
             ~{output_file}
     >>>
 
     output {
         File out = output_file
-    }
-}
-
-task ReplaceHeader {
-    input {
-        File vcf
-        File vcf_index
-        File header
-        String prefix
-        String sv_base_mini_docker
-        RuntimeAttr? runtime_attr_override
-    }
-
-    RuntimeAttr runtime_default = object {
-                                      mem_gb: 3.5,
-                                      disk_gb: ceil(10.0 + 2 * size(vcf, "GiB") + size(header, "GiB")),
-                                      cpu_cores: 1,
-                                      preemptible_tries: 3,
-                                      max_retries: 1,
-                                      boot_disk_gb: 10
-                                  }
-    RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-    runtime {
-        memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-        disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-        cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-        preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-        maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-        docker: sv_base_mini_docker
-        bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-    }
-
-    command <<<
-        set -euo pipefail
-        bcftools reheader --header ~{header} ~{vcf} > ~{prefix}.vcf.gz
-        tabix ~{prefix}.vcf.gz
-    >>>
-
-    output {
-        File out = "~{prefix}.vcf.gz"
-        File out_index = "~{prefix}.vcf.gz.tbi"
     }
 }

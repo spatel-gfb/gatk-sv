@@ -1,6 +1,7 @@
 version 1.0
 
 import "Structs.wdl"
+import "TasksMakeCohortVcf.wdl" as MiniTasks
 
 workflow HailMerge {
   input {
@@ -11,9 +12,19 @@ workflow HailMerge {
     String sv_base_mini_docker
   }
 
+  # Concatenate vcfs naively to prevent ClassTooLargeException in Hail
+  call MiniTasks.ConcatVcfs as Preconcat {
+    input:
+      vcfs=vcfs,
+      naive=true,
+      generate_index=false,
+      outfile_prefix="~{prefix}.preconcat",
+      sv_base_mini_docker=sv_base_mini_docker
+  }
+
   call HailMerge {
     input:
-      vcfs = vcfs,
+      vcfs = [Preconcat.concat_vcf],
       hail_script = hail_script,
       prefix = prefix,
       project = project

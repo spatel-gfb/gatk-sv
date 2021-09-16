@@ -3,6 +3,7 @@ version 1.0
 import "VcfClusterSingleChromsome.wdl" as VcfClusterContig
 import "TasksMakeCohortVcf.wdl" as MiniTasks
 import "HailMerge.wdl" as HailMerge
+import "HarmonizeHeaders.wdl" as HarmonizeHeaders
 import "MergePesrDepth.wdl" as MergePesrDepth
 import "Utils.wdl" as Utils
 
@@ -36,6 +37,7 @@ workflow CombineBatches {
     # overrides for local tasks
     RuntimeAttr? runtime_override_update_sr_list
     RuntimeAttr? runtime_override_merge_pesr_depth
+    RuntimeAttr? runtime_override_reheader
     RuntimeAttr? runtime_override_pull_header
 
     # overrides for mini tasks
@@ -73,7 +75,6 @@ workflow CombineBatches {
     RuntimeAttr? runtime_override_mpd_subset_small
     RuntimeAttr? runtime_override_mpd_subset_large
     RuntimeAttr? runtime_override_mpd_make_sites_only
-    RuntimeAttr? runtime_override_mpd_reheader
 
   }
 
@@ -125,6 +126,7 @@ workflow CombineBatches {
         sv_size=50,
         sv_types=["DEL","DUP","INV","BND","INS"],
         contig=contig,
+        evidence_type="pesr",
         cohort_name=cohort_name,
         localize_shard_size=localize_shard_size,
         subset_sr_lists=true,
@@ -167,6 +169,7 @@ workflow CombineBatches {
         sv_size=5000,
         sv_types=["DEL","DUP"],
         contig=contig,
+        evidence_type="depth",
         cohort_name=cohort_name,
         localize_shard_size=localize_shard_size,
         subset_sr_lists=false,
@@ -224,23 +227,24 @@ workflow CombineBatches {
         runtime_attr_override=runtime_override_update_sr_list
     }
 
-    ## DUP vcf [1] smallest of the depth vcfs
-    call PullHeader {
+    call HarmonizeHeaders.HarmonizeHeaders {
       input:
-        vcf=ClusterDepth.clustered_vcfs[1],
-        prefix="~{cohort_name}.~{contig}.depth",
+        header_vcf=ClusterDepth.clustered_vcfs[0],
+        vcfs=ClusterPesr.clustered_vcfs,
+        prefix="~{cohort_name}.~{contig}.harmonize_headers",
         sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_pull_header
+        runtime_override_reheader=runtime_override_reheader,
+        runtime_override_pull_header=runtime_override_pull_header
     }
 
     call MergePesrDepth.MergePesrDepth as MergeDeletions {
       input:
-        subtyped_pesr_vcf=ClusterPesr.clustered_vcfs[0],
+        subtyped_pesr_vcf=HarmonizeHeaders.out[0],
         subtyped_depth_vcf=ClusterDepth.clustered_vcfs[0],
         svtype="DEL",
-        header=PullHeader.out,
         num_samples=CountSamples.num_samples,
         prefix="~{cohort_name}.~{contig}.merge_del",
+        cohort_name=cohort_name,
         contig=contig,
         project=project,
         hail_script=hail_script,
@@ -253,18 +257,17 @@ workflow CombineBatches {
         runtime_override_sort_merged_vcf=runtime_override_mpd_sort_merged_vcf,
         runtime_override_subset_small=runtime_override_mpd_subset_small,
         runtime_override_subset_large=runtime_override_mpd_subset_large,
-        runtime_override_make_sites_only=runtime_override_mpd_make_sites_only,
-        runtime_override_reheader=runtime_override_mpd_reheader
+        runtime_override_make_sites_only=runtime_override_mpd_make_sites_only
     }
 
     call MergePesrDepth.MergePesrDepth as MergeDuplications {
       input:
-        subtyped_pesr_vcf=ClusterPesr.clustered_vcfs[1],
+        subtyped_pesr_vcf=HarmonizeHeaders.out[1],
         subtyped_depth_vcf=ClusterDepth.clustered_vcfs[1],
         svtype="DUP",
-        header=PullHeader.out,
         num_samples=CountSamples.num_samples,
         prefix="~{cohort_name}.~{contig}.merge_dup",
+        cohort_name=cohort_name,
         contig=contig,
         project=project,
         hail_script=hail_script,
@@ -277,13 +280,13 @@ workflow CombineBatches {
         runtime_override_sort_merged_vcf=runtime_override_mpd_sort_merged_vcf,
         runtime_override_subset_small=runtime_override_mpd_subset_small,
         runtime_override_subset_large=runtime_override_mpd_subset_large,
-        runtime_override_make_sites_only=runtime_override_mpd_make_sites_only,
-        runtime_override_reheader=runtime_override_mpd_reheader
+        runtime_override_make_sites_only=runtime_override_mpd_make_sites_only
     }
+
     #Merge PESR & RD VCFs
     call HailMerge.HailMerge as ConcatPesrDepth {
       input:
-        vcfs=[MergeDeletions.out, MergeDuplications.out, ClusterPesr.clustered_vcfs[2], ClusterPesr.clustered_vcfs[3], ClusterPesr.clustered_vcfs[4]],
+        vcfs=[MergeDeletions.out, MergeDuplications.out, HarmonizeHeaders.out[2], HarmonizeHeaders.out[3], HarmonizeHeaders.out[4]],
         prefix="~{cohort_name}.~{contig}.concat_pesr_depth",
         hail_script=hail_script,
         project=project,
@@ -330,43 +333,5 @@ workflow CombineBatches {
     Array[File] cluster_background_fail_lists = UpdateBackgroundFailSecond.updated_list
     File? merged_vcf = ConcatVcfs.concat_vcf
     File? merged_vcf_index = ConcatVcfs.concat_vcf_idx
-  }
-}
-
-
-task PullHeader {
-  input {
-    File vcf
-    String prefix
-    String sv_base_mini_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  RuntimeAttr runtime_default = object {
-                                  mem_gb: 2.0,
-                                  disk_gb: ceil(10.0 + size(vcf, "GiB") ),
-                                  cpu_cores: 1,
-                                  preemptible_tries: 3,
-                                  max_retries: 1,
-                                  boot_disk_gb: 10
-                                }
-  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
-  runtime {
-    memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
-    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
-    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
-    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
-    docker: sv_base_mini_docker
-    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
-  }
-
-  command <<<
-    set -euo pipefail
-    bcftools view --header-only ~{vcf} > ~{prefix}.header
-  >>>
-
-  output {
-    File out = "~{prefix}.header"
   }
 }

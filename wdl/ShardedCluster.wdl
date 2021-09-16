@@ -16,6 +16,7 @@ workflow ShardedCluster {
     String prefix
     String contig
     String cohort_name
+    String evidence_type
     String sv_type
     Float sample_overlap
     File? exclude_list
@@ -106,7 +107,7 @@ workflow ShardedCluster {
         num_samples=num_samples,
         num_vids=PullVcfShard.count,
         prefix="~{prefix}.clustered.shard_${i}",
-        vid_prefix="~{cohort_name}_~{contig}_~{sv_type}_~{i}",
+        vid_prefix="~{cohort_name}_~{contig}_~{evidence_type}_~{sv_type}_~{i}",
         dist=dist,
         frac=frac,
         exclude_list=exclude_list,
@@ -124,13 +125,6 @@ workflow ShardedCluster {
         sv_base_mini_docker = sv_base_mini_docker,
         runtime_attr_override = runtime_override_sort_merged_vcf
     }
-    call MiniTasks.GetVidList {
-      input:
-        vcf=SvtkVcfCluster.out,
-        prefix="~{prefix}.clustered.shard_${i}",
-        sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_get_vids
-    }
   }
 
   if (length(SvtkVcfCluster.out) == 0) {
@@ -143,13 +137,6 @@ workflow ShardedCluster {
     }
   }
   if (length(SvtkVcfCluster.out) > 0) {
-    call MiniTasks.CatUncompressedFiles as CatVidLists {
-      input:
-        shards=GetVidList.out,
-        outfile_name="~{prefix}.clustered.vids.list",
-        sv_base_mini_docker=sv_base_mini_docker,
-        runtime_attr_override=runtime_override_cat_vid_lists_sharded
-    }
     call HailMerge.HailMerge as ConcatVcfs {
       input:
         vcfs=SortVcf.out,
@@ -164,7 +151,6 @@ workflow ShardedCluster {
   output {
     File clustered_vcf = select_first([GetVcfHeaderWithMembersInfoLine.out, ConcatVcfs.merged_vcf])
     File clustered_vcf_idx = select_first([GetVcfHeaderWithMembersInfoLine.out_idx, ConcatVcfs.merged_vcf_index])
-    File clustered_vids_list = select_first([CatVidLists.outfile, empty_file])
   }
 }
 

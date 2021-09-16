@@ -210,9 +210,6 @@ task ConcatVcfs {
   command <<<
     set -euo pipefail
     VCFS="~{write_lines(vcfs)}"
-    if ~{!defined(vcfs_idx)}; then
-      cat ${VCFS} | xargs -n1 tabix
-    fi
     bcftools concat --no-version ~{allow_overlaps_flag} ~{naive_flag} --output-type z --file-list ${VCFS} --output ~{outfile_name}
     if ~{sites_only}; then
       mv ~{outfile_name} tmp.vcf.gz
@@ -648,7 +645,7 @@ task UpdateSrList {
   Float input_size = size([vcf, original_list], "GiB")
   RuntimeAttr runtime_default = object {
     mem_gb: 3.75,
-    disk_gb: ceil(10.0 + input_size * 2),
+    disk_gb: ceil(10.0 + size(original_list, "GiB") * 3 + size(vcf, "GiB")),
     cpu_cores: 1,
     preemptible_tries: 3,
     max_retries: 1,
@@ -668,17 +665,19 @@ task UpdateSrList {
   command <<<
     set -euxo pipefail
 
-    ##append new ids to original list##
+    # append new ids to original list
     svtk vcf2bed ~{vcf} int.bed -i MEMBERS --no-samples --no-header
 
-    ##match id one per line##
-    awk '{print $4 "\t" $NF}' int.bed \
-      | awk -F'[,\t]' '{for(i=2; i<=NF; ++i) print $i "\t" $1 }' \
-      | sort -k1,1 \
-      > newidlist.txt
-
-    join -j 1 -t $'\t' <(awk '{print $NF "\t" $0}' ~{original_list} | sort -k1,1) newidlist.txt \
-      | cut -f2- \
+    # match id one per line
+    # if an id is not found in the vcf, use previous id (in case vcf is a shard/subset)
+    # also sort by first column, which is support fraction for a bothside pass list
+    awk -F'[,\t]' -v OFS='\t' \
+      '{ \
+        if (ARGIND==1) for(i=6; i<=NF; ++i) MAP[$i]=$4; \
+        else if ($NF in MAP) print $0,MAP[$NF]; \
+        else print $0,$NF; \
+      }' int.bed ~{original_list} \
+      | sort -k1,1n \
       > ~{outfile}
   >>>
 
@@ -817,7 +816,7 @@ task MakeSitesOnlyVcf {
 
   command <<<
     set -euxo pipefail
-    bcftools view --no-version -G ~{vcf} -Oz -o ~{prefix}
+    bcftools view --no-version -G ~{vcf} -Oz -o ~{prefix}.vcf.gz
     tabix ~{prefix}.vcf.gz
   >>>
 
@@ -859,7 +858,7 @@ task ReheaderVcf {
 
   command <<<
     set -euxo pipefail
-    bcftools reheader -h ~{header} ~{vcf} -Oz -o ~{prefix}.vcf.gz
+    bcftools reheader -h ~{header} ~{vcf} > ~{prefix}.vcf.gz
     tabix ~{prefix}.vcf.gz
   >>>
 
@@ -912,20 +911,22 @@ task PullVcfShard {
   }
 }
 
-task GetVidList {
+task RenameVariantIds {
   input {
     File vcf
-    String prefix
+    File? vcf_index
+    String vid_prefix
+    String file_prefix
+    Boolean? use_ssd
     String sv_base_mini_docker
     RuntimeAttr? runtime_attr_override
   }
 
-  # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
-  # be held in memory or disk while working, potentially in a form that takes up more space)
+  String disk_type = if (defined(use_ssd) && select_first([use_ssd])) then "SSD" else "HDD"
   Float input_size = size(vcf, "GiB")
   RuntimeAttr runtime_default = object {
                                   mem_gb: 2.0,
-                                  disk_gb: ceil(10.0 + 1.1 * input_size),
+                                  disk_gb: ceil(10.0 + input_size * 2),
                                   cpu_cores: 1,
                                   preemptible_tries: 3,
                                   max_retries: 1,
@@ -934,7 +935,7 @@ task GetVidList {
   RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
   runtime {
     memory: "~{select_first([runtime_override.mem_gb, runtime_default.mem_gb])} GiB"
-    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} HDD"
+    disks: "local-disk ~{select_first([runtime_override.disk_gb, runtime_default.disk_gb])} ~{disk_type}"
     cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
     preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
     maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
@@ -944,10 +945,19 @@ task GetVidList {
 
   command <<<
     set -euo pipefail
-    zcat ~{vcf} | (grep -v "^#" || printf "") | cut -f3 > ~{prefix}.vids.list
+    zcat ~{vcf} \
+      | awk -F'\t' -v OFS='\t' -v i=0 '{if ($0~/^#/) {print; next} $3="prefix_"(i++); print}' \
+      | bgzip \
+      > ~{file_prefix}.vcf.gz
+    if ~{defined(vcf_index)}; then
+      tabix ~{file_prefix}.vcf.gz
+    else
+      touch ~{file_prefix}.vcf.gz
+    fi
   >>>
 
   output {
-    File out = "~{prefix}.vids.list"
+    File out = "~{file_prefix}.vcf.gz"
+    File out_index = "~{file_prefix}.vcf.gz.tbi"
   }
 }

@@ -12,6 +12,7 @@ workflow VcfClusterSingleChrom {
     Array[File] vcfs
     Int num_samples
     String prefix
+    String evidence_type
     String cohort_name
     Int dist
     Float frac
@@ -117,6 +118,7 @@ workflow VcfClusterSingleChrom {
       num_samples=num_samples,
       contig=contig,
       cohort_name=cohort_name,
+      evidence_type=evidence_type,
       prefix=prefix,
       dist=dist,
       frac=frac,
@@ -145,7 +147,8 @@ workflow VcfClusterSingleChrom {
     call SubsetVariantList as SubsetBothsidePass {
       input:
         vid_list=bothside_pass,
-        subset_list=ClusterSingleChrom.clustered_vids_list,
+        vid_col=2,
+        vcf=ConcatVcfs.concat_vcf,
         outfile_name="~{prefix}.pass.VIDs.list",
         sv_base_mini_docker=sv_base_mini_docker,
         runtime_attr_override=runtime_override_subset_bothside_pass
@@ -153,7 +156,8 @@ workflow VcfClusterSingleChrom {
     call SubsetVariantList as SubsetBackgroundFail {
       input:
         vid_list=background_fail,
-        subset_list=ClusterSingleChrom.clustered_vids_list,
+        vid_col=1,
+        vcf=ConcatVcfs.concat_vcf,
         outfile_name="~{prefix}.fail.VIDs.list",
         sv_base_mini_docker=sv_base_mini_docker,
         runtime_attr_override=runtime_override_subset_background_fail
@@ -409,13 +413,12 @@ task FixEvidenceTags {
   }
 }
 
-
-
 # Find intersection of Variant IDs from vid_list with those present in vcf, return as filtered_vid_list
 task SubsetVariantList {
   input {
     File vid_list
-    File subset_list
+    Int vid_col
+    File vcf
     String outfile_name
     String sv_base_mini_docker
     RuntimeAttr? runtime_attr_override
@@ -425,7 +428,7 @@ task SubsetVariantList {
   # be held in memory or disk while working, potentially in a form that takes up more space)
   RuntimeAttr runtime_default = object {
                                   mem_gb: 3.75,
-                                  disk_gb: ceil(10.0 + size(vid_list, "GB") * 2.0 + size(subset_list, "GB")),
+                                  disk_gb: ceil(10.0 + size(vid_list, "GB") * 2.0 + size(vcf, "GB")),
                                   cpu_cores: 1,
                                   preemptible_tries: 3,
                                   max_retries: 1,
@@ -444,7 +447,8 @@ task SubsetVariantList {
 
   command <<<
     set -euo pipefail
-    awk -F'\t' -v OFS='\t' 'ARGIND==1{inFileA[$1]; next} {if ($1 in inFileA) print }' ~{subset_list} ~{vid_list} \
+    zgrep -v "^#" ~{vcf} | cut -f3 > valid_vids.list
+    awk -F'\t' -v OFS='\t' 'ARGIND==1{inFileA[$1]; next} {if ($~{vid_col} in inFileA) print }' valid_vids.list ~{vid_list} \
       > ~{outfile_name}
   >>>
 

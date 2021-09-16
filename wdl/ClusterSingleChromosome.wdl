@@ -14,6 +14,7 @@ workflow ClusterSingleChrom {
     Int num_samples
     String contig
     String cohort_name
+    String evidence_type
     String prefix
     Int dist
     Float frac
@@ -70,6 +71,7 @@ workflow ClusterSingleChrom {
         prefix="~{prefix}.~{sv_type}",
         cohort_name=cohort_name,
         contig=contig,
+        evidence_type=evidence_type,
         sv_type=sv_type,
         sample_overlap=sample_overlap,
         exclude_list=exclude_list,
@@ -91,28 +93,9 @@ workflow ClusterSingleChrom {
     }
   }
 
-  call MiniTasks.CatUncompressedFiles as CatVidListsChrom {
-    input:
-    shards=ShardedCluster.clustered_vids_list,
-    outfile_name="~{prefix}.clustered.vids.list",
-    sv_base_mini_docker=sv_base_mini_docker,
-    runtime_attr_override=runtime_override_cat_vid_lists_chrom
-  }
-
-  #Merge svtypes
-  #call HailMerge.HailMerge as ConcatSvTypes {
-  #  input:
-  #    vcfs=RenameVariants.out,
-  #    prefix="~{prefix}.~{contig}.concat_svtypes",
-  #    hail_script=hail_script,
-  #    project=project,
-  #    sv_base_mini_docker=sv_base_mini_docker
-  #}
-
   #Output clustered vcf
   output {
     Array[File] clustered_vcfs = ShardedCluster.clustered_vcf
     Array[File] clustered_vcf_indexes = ShardedCluster.clustered_vcf_idx
-    File clustered_vids_list = CatVidListsChrom.outfile
   }
 }

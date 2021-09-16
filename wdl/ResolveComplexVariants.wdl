@@ -169,6 +169,8 @@ workflow ResolveComplexVariants {
       input:
         vcf=IntegrateResolvedVcfs.integrated_vcf,
         prefix="~{cohort_name}.~{contig}.renamed",
+        chrom=contig,
+        vid_prefix=cohort_name,
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_override=runtime_override_rename_variants
     }
@@ -178,7 +180,7 @@ workflow ResolveComplexVariants {
       input:
         vcf=RenameVariants.renamed_vcf,
         original_list=cluster_bothside_pass_lists[i],
-        outfile="sr_bothside_pass.~{contig}.updated3.txt",
+        outfile="~{cohort_name}.~{contig}.sr_bothside_pass.updated3.txt",
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_override=runtime_override_update_sr_list_pass
     }
@@ -188,7 +190,7 @@ workflow ResolveComplexVariants {
       input:
         vcf=RenameVariants.renamed_vcf,
         original_list=cluster_background_fail_lists[i],
-        outfile="sr_background_fail.~{contig}.updated3.txt",
+        outfile="~{cohort_name}.~{contig}.sr_background_fail.updated3.txt",
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_override=runtime_override_update_sr_list_fail
     }
@@ -348,13 +350,13 @@ task BreakpointOverlap {
   }
 }
 
-
-
 # Rename variants in VCF
 task RenameVariants {
   input {
     File vcf
+    String vid_prefix
     String prefix
+    String chrom
     String sv_pipeline_docker
     RuntimeAttr? runtime_attr_override
   }
@@ -383,7 +385,7 @@ task RenameVariants {
 
   command <<<
     set -euo pipefail
-    /opt/sv-pipeline/04_variant_resolution/scripts/rename.py --prefix ~{prefix} ~{vcf} - \
+    /opt/sv-pipeline/04_variant_resolution/scripts/rename.py --chrom ~{chrom} --prefix ~{vid_prefix} ~{vcf} - \
       | bgzip \
       > ~{prefix}.vcf.gz
     tabix ~{prefix}.vcf.gz
