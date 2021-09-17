@@ -65,6 +65,9 @@ workflow CombineBatches {
     RuntimeAttr? runtime_override_concat_svtypes
     RuntimeAttr? runtime_override_concat_sharded_cluster
     RuntimeAttr? runtime_override_make_sites_only
+    RuntimeAttr? runtime_override_preconcat_sharded_cluster
+    RuntimeAttr? runtime_override_hail_merge_sharded_cluster
+    RuntimeAttr? runtime_override_fix_header_sharded_cluster
 
     # overerides for merge pesr depth
     RuntimeAttr? runtime_override_mpd_shard_clusters
@@ -75,6 +78,10 @@ workflow CombineBatches {
     RuntimeAttr? runtime_override_mpd_subset_small
     RuntimeAttr? runtime_override_mpd_subset_large
     RuntimeAttr? runtime_override_mpd_make_sites_only
+
+    RuntimeAttr? runtime_override_preconcat_pesr_depth
+    RuntimeAttr? runtime_override_hail_merge_pesr_depth
+    RuntimeAttr? runtime_override_fix_header_pesr_depth
 
   }
 
@@ -152,7 +159,10 @@ workflow CombineBatches {
         runtime_override_concat_vcf_cluster=runtime_override_concat_vcf_cluster,
         runtime_override_concat_svtypes=runtime_override_concat_svtypes,
         runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
-        runtime_override_make_sites_only=runtime_override_make_sites_only
+        runtime_override_make_sites_only=runtime_override_make_sites_only,
+        runtime_override_preconcat_sharded_cluster=runtime_override_preconcat_sharded_cluster,
+        runtime_override_hail_merge_sharded_cluster=runtime_override_hail_merge_sharded_cluster,
+        runtime_override_fix_header_sharded_cluster=runtime_override_fix_header_sharded_cluster
     }
 
     #Subset RD VCFs to single chromosome & cluster
@@ -194,7 +204,10 @@ workflow CombineBatches {
         runtime_override_concat_vcf_cluster=runtime_override_concat_vcf_cluster,
         runtime_override_concat_svtypes=runtime_override_concat_svtypes,
         runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
-        runtime_override_make_sites_only=runtime_override_make_sites_only
+        runtime_override_make_sites_only=runtime_override_make_sites_only,
+        runtime_override_preconcat_sharded_cluster=runtime_override_preconcat_sharded_cluster,
+        runtime_override_hail_merge_sharded_cluster=runtime_override_hail_merge_sharded_cluster,
+        runtime_override_fix_header_sharded_cluster=runtime_override_fix_header_sharded_cluster
     }
 
     call MiniTasks.ConcatVcfs as ConcatPesrSitesOnly {
@@ -290,7 +303,10 @@ workflow CombineBatches {
         prefix="~{cohort_name}.~{contig}.concat_pesr_depth",
         hail_script=hail_script,
         project=project,
-        sv_base_mini_docker=sv_base_mini_docker
+        sv_base_mini_docker=sv_base_mini_docker,
+        runtime_override_preconcat=runtime_override_preconcat_pesr_depth,
+        runtime_override_hail_merge=runtime_override_hail_merge_pesr_depth,
+        runtime_override_fix_header=runtime_override_fix_header_pesr_depth
     }
 
     #Update SR background fail & bothside pass files (2)

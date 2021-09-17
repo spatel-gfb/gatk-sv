@@ -39,6 +39,10 @@ workflow CleanVcfChromosome {
     RuntimeAttr? runtime_override_stitch_fragmented_cnvs
     RuntimeAttr? runtime_override_final_cleanup
 
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
+
     # overrides for MiniTasks
     RuntimeAttr? runtime_override_split_vcf_to_clean
     RuntimeAttr? runtime_override_combine_step_1_vcfs
@@ -80,7 +84,10 @@ workflow CleanVcfChromosome {
       prefix="~{prefix}.cleanVCF_step1.intermediate_vcf.merged",
       hail_script=hail_script,
       project=project,
-      sv_base_mini_docker=sv_base_mini_docker
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_override_preconcat=runtime_override_preconcat,
+      runtime_override_hail_merge=runtime_override_hail_merge,
+      runtime_override_fix_header=runtime_override_fix_header
   }
 
   call MiniTasks.CatUncompressedFiles as CombineStep1SexChrRevisions {

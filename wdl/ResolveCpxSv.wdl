@@ -39,6 +39,10 @@ workflow ResolveComplexSv {
     RuntimeAttr? runtime_override_merge_resolve_inner
     RuntimeAttr? runtime_override_concat_resolved_per_shard
     RuntimeAttr? runtime_override_pull_vcf_shard
+
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
   }
 
   File vcf_idx = vcf + ".tbi"
@@ -139,7 +143,10 @@ workflow ResolveComplexSv {
         prefix="~{prefix}.resolved",
         hail_script=hail_script,
         project=project,
-        sv_base_mini_docker=sv_base_mini_docker
+        sv_base_mini_docker=sv_base_mini_docker,
+        runtime_override_preconcat=runtime_override_preconcat,
+        runtime_override_hail_merge=runtime_override_hail_merge,
+        runtime_override_fix_header=runtime_override_fix_header
     }
   }
 

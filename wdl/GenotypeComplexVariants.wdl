@@ -48,6 +48,9 @@ workflow GenotypeComplexVariants {
     RuntimeAttr? runtime_override_concat_melted_genotypes
     RuntimeAttr? runtime_attr_ids_from_vcf
     RuntimeAttr? runtime_attr_subset_ped
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
   }
 
   scatter (i in range(length(batches))) {
@@ -105,7 +108,10 @@ workflow GenotypeComplexVariants {
         runtime_override_merge_melted_gts=runtime_override_merge_melted_gts,
         runtime_override_split_bed_by_size=runtime_override_split_bed_by_size,
         runtime_override_rd_genotype=runtime_override_rd_genotype,
-        runtime_override_concat_melted_genotypes=runtime_override_concat_melted_genotypes
+        runtime_override_concat_melted_genotypes=runtime_override_concat_melted_genotypes,
+        runtime_override_preconcat=runtime_override_preconcat,
+        runtime_override_hail_merge=runtime_override_hail_merge,
+        runtime_override_fix_header=runtime_override_fix_header
     }
   }
 

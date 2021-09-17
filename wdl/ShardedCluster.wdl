@@ -38,6 +38,10 @@ workflow ShardedCluster {
     RuntimeAttr? runtime_override_svtk_vcf_cluster
     RuntimeAttr? runtime_override_get_vcf_header_with_members_info_line
 
+    RuntimeAttr? runtime_override_preconcat_sharded_cluster
+    RuntimeAttr? runtime_override_hail_merge_sharded_cluster
+    RuntimeAttr? runtime_override_fix_header_sharded_cluster
+
     # overrides for merge subworkflow
     RuntimeAttr? runtime_override_merge_clusters
     RuntimeAttr? runtime_override_concat_inner_shards
@@ -143,7 +147,10 @@ workflow ShardedCluster {
         prefix="~{prefix}.clustered",
         hail_script=hail_script,
         project=project,
-        sv_base_mini_docker=sv_base_mini_docker
+        sv_base_mini_docker=sv_base_mini_docker,
+        runtime_override_preconcat=runtime_override_preconcat_sharded_cluster,
+        runtime_override_hail_merge=runtime_override_hail_merge_sharded_cluster,
+        runtime_override_fix_header=runtime_override_fix_header_sharded_cluster
     }
   }
 

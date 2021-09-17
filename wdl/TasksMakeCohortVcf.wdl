@@ -182,10 +182,6 @@ task ConcatVcfs {
     RuntimeAttr? runtime_attr_override
   }
 
-  String outfile_name = outfile_prefix + ".vcf.gz"
-  String allow_overlaps_flag = if allow_overlaps then "--allow-overlaps" else ""
-  String naive_flag = if naive then "--naive" else ""
-
   # when filtering/sorting/etc, memory usage will likely go up (much of the data will have to
   # be held in memory or disk while working, potentially in a form that takes up more space)
   RuntimeAttr runtime_default = object {
@@ -207,19 +203,20 @@ task ConcatVcfs {
     bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
   }
 
+  String outfile_name = outfile_prefix + ".vcf.gz"
+  String allow_overlaps_flag = if allow_overlaps then "--allow-overlaps" else ""
+  String naive_flag = if naive then "--naive" else ""
+  String concat_output_type = if (sites_only) then "v" else "z"
+  String sites_only_command = if (sites_only) then "| bcftools view --no-version -G -Oz" else ""
+  String generate_index_command = if (generate_index) then "tabix ~{outfile_name}" else "touch ~{outfile_name}.tbi"
+
   command <<<
     set -euo pipefail
     VCFS="~{write_lines(vcfs)}"
-    bcftools concat --no-version ~{allow_overlaps_flag} ~{naive_flag} --output-type z --file-list ${VCFS} --output ~{outfile_name}
-    if ~{sites_only}; then
-      mv ~{outfile_name} tmp.vcf.gz
-      bcftools view --no-version -G tmp.vcf.gz -Oz -o ~{outfile_name}
-    fi
-    if ~{generate_index}; then
-      tabix "~{outfile_name}"
-    else
-      touch ~{outfile_name}.tbi
-    fi
+    bcftools concat --no-version ~{allow_overlaps_flag} ~{naive_flag} -O~{concat_output_type} --file-list ${VCFS} \
+      ~{sites_only_command} \
+      > ~{outfile_name}
+    ~{generate_index_command}
   >>>
 
   output {

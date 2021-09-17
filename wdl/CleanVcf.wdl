@@ -46,6 +46,9 @@ workflow CleanVcf {
     RuntimeAttr? runtime_override_combine_clean_vcf_2
     RuntimeAttr? runtime_override_combine_revised_4
     RuntimeAttr? runtime_override_combine_multi_ids_4
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
   }
 
   #Scatter per chromosome
@@ -85,7 +88,10 @@ workflow CleanVcf {
         runtime_override_split_include_list=runtime_override_split_include_list,
         runtime_override_combine_clean_vcf_2=runtime_override_combine_clean_vcf_2,
         runtime_override_combine_revised_4=runtime_override_combine_revised_4,
-        runtime_override_combine_multi_ids_4=runtime_override_combine_multi_ids_4
+        runtime_override_combine_multi_ids_4=runtime_override_combine_multi_ids_4,
+        runtime_override_preconcat=runtime_override_preconcat,
+        runtime_override_hail_merge=runtime_override_hail_merge,
+        runtime_override_fix_header=runtime_override_fix_header
     }
   }
 

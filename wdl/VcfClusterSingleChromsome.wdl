@@ -56,6 +56,10 @@ workflow VcfClusterSingleChrom {
     RuntimeAttr? runtime_override_concat_svtypes
     RuntimeAttr? runtime_override_concat_sharded_cluster
     RuntimeAttr? runtime_override_make_sites_only
+
+    RuntimeAttr? runtime_override_preconcat_sharded_cluster
+    RuntimeAttr? runtime_override_hail_merge_sharded_cluster
+    RuntimeAttr? runtime_override_fix_header_sharded_cluster
   }
 
   scatter (i in range(length(vcfs))) {
@@ -139,7 +143,10 @@ workflow VcfClusterSingleChrom {
       runtime_override_get_vcf_header_with_members_info_line=runtime_override_get_vcf_header_with_members_info_line,
       runtime_override_concat_svtypes=runtime_override_concat_svtypes,
       runtime_override_concat_sharded_cluster=runtime_override_concat_sharded_cluster,
-      runtime_override_make_sites_only=runtime_override_make_sites_only
+      runtime_override_make_sites_only=runtime_override_make_sites_only,
+      runtime_override_preconcat_sharded_cluster=runtime_override_preconcat_sharded_cluster,
+      runtime_override_hail_merge_sharded_cluster=runtime_override_hail_merge_sharded_cluster,
+      runtime_override_fix_header_sharded_cluster=runtime_override_fix_header_sharded_cluster
   }
 
   if(subset_sr_lists) {

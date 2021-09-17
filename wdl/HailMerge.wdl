@@ -10,6 +10,9 @@ workflow HailMerge {
     String prefix
     String project
     String sv_base_mini_docker
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
   }
 
   # Concatenate vcfs naively to prevent ClassTooLargeException in Hail
@@ -19,7 +22,8 @@ workflow HailMerge {
       naive=true,
       generate_index=false,
       outfile_prefix="~{prefix}.preconcat",
-      sv_base_mini_docker=sv_base_mini_docker
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_attr_override=runtime_override_preconcat
   }
 
   call HailMerge {
@@ -27,7 +31,8 @@ workflow HailMerge {
       vcfs = [Preconcat.concat_vcf],
       hail_script = hail_script,
       prefix = prefix,
-      project = project
+      project = project,
+      runtime_attr_override=runtime_override_hail_merge
   }
 
   call FixHeader {
@@ -35,7 +40,8 @@ workflow HailMerge {
       merged_vcf = HailMerge.merged_vcf,
       example_vcf = vcfs[0],
       prefix = prefix + ".reheadered",
-      sv_base_mini_docker = sv_base_mini_docker
+      sv_base_mini_docker = sv_base_mini_docker,
+      runtime_attr_override=runtime_override_fix_header
   }
 
   output {
@@ -51,6 +57,7 @@ task HailMerge {
     String project
     File hail_script
     String region = "us-central1"
+    RuntimeAttr? runtime_attr_override
   }
 
   parameter_meta {
@@ -60,6 +67,25 @@ task HailMerge {
   }
 
   String cluster_name_prefix="gatk-sv-cluster-"
+
+  RuntimeAttr runtime_default = object {
+                                  mem_gb: 6.5,
+                                  disk_gb: 100,
+                                  cpu_cores: 1,
+                                  preemptible_tries: 3,
+                                  max_retries: 1,
+                                  boot_disk_gb: 10
+                                }
+  RuntimeAttr runtime_override = select_first([runtime_attr_override, runtime_default])
+  runtime {
+    memory: select_first([runtime_override.mem_gb, runtime_default.mem_gb]) + " GB"
+    disks: "local-disk " + select_first([runtime_override.disk_gb, runtime_default.disk_gb]) + " SSD"
+    cpu: select_first([runtime_override.cpu_cores, runtime_default.cpu_cores])
+    preemptible: select_first([runtime_override.preemptible_tries, runtime_default.preemptible_tries])
+    maxRetries: select_first([runtime_override.max_retries, runtime_default.max_retries])
+    docker: "us.gcr.io/broad-dsde-methods/cwhelan/sv-pipeline-hail:0.2.71"
+    bootDiskSizeGb: select_first([runtime_override.boot_disk_gb, runtime_default.boot_disk_gb])
+  }
 
   command <<<
     set -euxo pipefail
@@ -98,13 +124,6 @@ CODE
   mv merged.vcf.bgz ~{prefix}.vcf.gz
   tabix ~{prefix}.vcf.gz
   >>>
-
-  runtime {
-    memory: "6.5 GB"
-    disks: "local-disk 100 HDD"
-    docker: "us.gcr.io/broad-dsde-methods/cwhelan/sv-pipeline-hail:0.2.71"
-    bootDiskSizeGb: 10
-  }
 
   output {
     File merged_vcf = "~{prefix}.vcf.gz"

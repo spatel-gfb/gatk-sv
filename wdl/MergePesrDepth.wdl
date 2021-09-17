@@ -35,6 +35,14 @@ workflow MergePesrDepth {
         RuntimeAttr? runtime_override_subset_small
         RuntimeAttr? runtime_override_subset_large
         RuntimeAttr? runtime_override_make_sites_only
+
+        RuntimeAttr? runtime_override_preconcat_large_pesr_depth
+        RuntimeAttr? runtime_override_hail_merge_large_pesr_depth
+        RuntimeAttr? runtime_override_fix_header_large_pesr_depth
+
+        RuntimeAttr? runtime_override_preconcat_pesr_depth_shards
+        RuntimeAttr? runtime_override_hail_merge_pesr_depth_shards
+        RuntimeAttr? runtime_override_fix_header_pesr_depth_shards
     }
 
     # Pull out CNVs too small to cluster (less than reciprocal_overlap_fraction * min_depth_only_length)
@@ -66,7 +74,10 @@ workflow MergePesrDepth {
             prefix="~{prefix}.large_pesr_depth",
             hail_script=hail_script,
             project=project,
-            sv_base_mini_docker=sv_base_mini_docker
+            sv_base_mini_docker=sv_base_mini_docker,
+            runtime_override_preconcat=runtime_override_preconcat_large_pesr_depth,
+            runtime_override_hail_merge=runtime_override_hail_merge_large_pesr_depth,
+            runtime_override_fix_header=runtime_override_fix_header_large_pesr_depth
     }
 
     call MiniTasks.MakeSitesOnlyVcf {
@@ -134,7 +145,10 @@ workflow MergePesrDepth {
             prefix="~{prefix}.concat_shards",
             hail_script=hail_script,
             project=project,
-            sv_base_mini_docker=sv_base_mini_docker
+            sv_base_mini_docker=sv_base_mini_docker,
+            runtime_override_preconcat=runtime_override_preconcat_pesr_depth_shards,
+            runtime_override_hail_merge=runtime_override_hail_merge_pesr_depth_shards,
+            runtime_override_fix_header=runtime_override_fix_header_pesr_depth_shards
     }
 
     output {

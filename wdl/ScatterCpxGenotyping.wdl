@@ -40,6 +40,10 @@ workflow ScatterCpxGenotyping {
     RuntimeAttr? runtime_override_split_vcf_to_genotype
     RuntimeAttr? runtime_override_concat_cpx_cnv_vcfs
 
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
+
     # overrides for GenotypeCpx
     RuntimeAttr? runtime_override_ids_from_median
     RuntimeAttr? runtime_override_get_cpx_cnv_intervals
@@ -102,7 +106,10 @@ workflow ScatterCpxGenotyping {
       prefix="~{prefix}.regenotyped",
       hail_script=hail_script,
       project=project,
-      sv_base_mini_docker=sv_base_mini_docker
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_override_preconcat=runtime_override_preconcat,
+      runtime_override_hail_merge=runtime_override_hail_merge,
+      runtime_override_fix_header=runtime_override_fix_header
   }
 
   # Output merged VCF

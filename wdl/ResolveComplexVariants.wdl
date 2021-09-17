@@ -51,6 +51,9 @@ workflow ResolveComplexVariants {
     RuntimeAttr? runtime_override_concat_resolved_per_shard
     RuntimeAttr? runtime_override_merge_resolve_inner
     RuntimeAttr? runtime_override_pull_vcf_shard
+    RuntimeAttr? runtime_override_preconcat
+    RuntimeAttr? runtime_override_hail_merge
+    RuntimeAttr? runtime_override_fix_header
 
     RuntimeAttr? runtime_override_get_se_cutoff_inv
     RuntimeAttr? runtime_override_shard_vcf_cpx_inv
@@ -61,6 +64,9 @@ workflow ResolveComplexVariants {
     RuntimeAttr? runtime_override_concat_resolved_per_shard_inv
     RuntimeAttr? runtime_override_merge_resolve_inner_inv
     RuntimeAttr? runtime_override_pull_vcf_shard_inv
+    RuntimeAttr? runtime_override_preconcat_inv
+    RuntimeAttr? runtime_override_hail_merge_inv
+    RuntimeAttr? runtime_override_fix_header_inv
   }
 
   #Scatter per chromosome
@@ -108,7 +114,10 @@ workflow ResolveComplexVariants {
         runtime_override_restore_unresolved_cnv_per_shard=runtime_override_restore_unresolved_cnv_per_shard_inv,
         runtime_override_concat_resolved_per_shard=runtime_override_concat_resolved_per_shard_inv,
         runtime_override_merge_resolve_inner=runtime_override_merge_resolve_inner_inv,
-        runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard_inv
+        runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard_inv,
+        runtime_override_preconcat=runtime_override_preconcat_inv,
+        runtime_override_hail_merge=runtime_override_hail_merge_inv,
+        runtime_override_fix_header=runtime_override_fix_header_inv
     }
 
     #Run same-bp overlap filter on full vcf
@@ -151,7 +160,10 @@ workflow ResolveComplexVariants {
         runtime_override_restore_unresolved_cnv_per_shard=runtime_override_restore_unresolved_cnv_per_shard,
         runtime_override_concat_resolved_per_shard=runtime_override_concat_resolved_per_shard,
         runtime_override_merge_resolve_inner=runtime_override_merge_resolve_inner,
-        runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard
+        runtime_override_pull_vcf_shard=runtime_override_pull_vcf_shard,
+        runtime_override_preconcat=runtime_override_preconcat,
+        runtime_override_hail_merge=runtime_override_hail_merge,
+        runtime_override_fix_header=runtime_override_fix_header
     }
 
     #Integrate inv-only and all-variants resolved VCFs
