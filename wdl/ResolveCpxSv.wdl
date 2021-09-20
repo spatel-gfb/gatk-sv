@@ -409,7 +409,7 @@ task SvtkResolve {
     mem_gb: 3 + input_size * 10,
     disk_gb: ceil(10 + input_size * 12),
     cpu_cores: 1,
-    preemptible_tries: 1,
+    preemptible_tries: 3,
     max_retries: 1,
     boot_disk_gb: 10
   }
