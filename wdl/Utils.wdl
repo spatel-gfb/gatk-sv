@@ -44,6 +44,50 @@ task GetSampleIdsFromVcf {
   }
 }
 
+task GetSampleIdsFromVcfArray {
+  input {
+    Array[File] vcfs
+    String prefix
+    String sv_base_mini_docker
+    RuntimeAttr? runtime_attr_override
+  }
+
+  RuntimeAttr default_attr = object {
+                               cpu_cores: 1,
+                               mem_gb: 0.9,
+                               disk_gb: 2 + ceil(size(vcfs, "GiB")),
+                               boot_disk_gb: 10,
+                               preemptible_tries: 3,
+                               max_retries: 1
+                             }
+  RuntimeAttr runtime_attr = select_first([runtime_attr_override, default_attr])
+
+  command <<<
+
+    set -eu
+    touch ~{prefix}.txt
+    while read VCF; do
+      bcftools query -l $VCF >> ~{prefix}.txt
+    done < ~{write_lines(vcfs)}
+
+  >>>
+
+  output {
+    File out_file = "~{prefix}.txt"
+    Array[String] out_array = read_lines("~{prefix}.txt")
+  }
+
+  runtime {
+    cpu: select_first([runtime_attr.cpu_cores, default_attr.cpu_cores])
+    memory: select_first([runtime_attr.mem_gb, default_attr.mem_gb]) + " GiB"
+    disks: "local-disk " + select_first([runtime_attr.disk_gb, default_attr.disk_gb]) + " HDD"
+    bootDiskSizeGb: select_first([runtime_attr.boot_disk_gb, default_attr.boot_disk_gb])
+    docker: sv_base_mini_docker
+    preemptible: select_first([runtime_attr.preemptible_tries, default_attr.preemptible_tries])
+    maxRetries: select_first([runtime_attr.max_retries, default_attr.max_retries])
+  }
+}
+
 task CountSamples {
   input {
     File vcf
@@ -248,6 +292,50 @@ task SubsetPedFile {
 
   output {
     File ped_subset_file = ped_subset_filename
+  }
+
+  runtime {
+    cpu: select_first([runtime_attr.cpu_cores, default_attr.cpu_cores])
+    memory: select_first([runtime_attr.mem_gb, default_attr.mem_gb]) + " GiB"
+    disks: "local-disk " + select_first([runtime_attr.disk_gb, default_attr.disk_gb]) + " HDD"
+    bootDiskSizeGb: select_first([runtime_attr.boot_disk_gb, default_attr.boot_disk_gb])
+    docker: sv_base_mini_docker
+    preemptible: select_first([runtime_attr.preemptible_tries, default_attr.preemptible_tries])
+    maxRetries: select_first([runtime_attr.max_retries, default_attr.max_retries])
+  }
+}
+
+task IndexVcfs {
+  input {
+    Array[File] vcfs
+    String sv_base_mini_docker
+    RuntimeAttr? runtime_attr_override
+  }
+
+  RuntimeAttr default_attr = object {
+                               cpu_cores: 1,
+                               mem_gb: 2.0,
+                               disk_gb: ceil(10 + size(vcfs, "GB")),
+                               boot_disk_gb: 10,
+                               preemptible_tries: 3,
+                               max_retries: 1
+                             }
+  RuntimeAttr runtime_attr = select_first([runtime_attr_override, default_attr])
+
+  command <<<
+
+    set -euo pipefail
+    mkdir out
+    while read VCF; do
+      NAME=$(basename $VCF)
+      mv $VCF out/$NAME
+      tabix out/$NAME
+    done < ~{write_lines(vcfs)}
+
+  >>>
+
+  output {
+    Array[File] vcfs_and_indexes = glob("out/*")
   }
 
   runtime {

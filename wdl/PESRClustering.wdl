@@ -1,159 +1,126 @@
 version 1.0
 
 import "Structs.wdl"
+import "TasksClusterBatch.wdl" as tasks_cluster
+import "TasksMakeCohortVcf.wdl" as tasks_cohort
+import "Utils.wdl" as util
 
 workflow ClusterPESR {
   input {
     Array[File] vcfs
-    String batch
-    Float frac
-    String svtypes
-    Int svsize
-    String algorithm
-    File exclude_list
-    File contigs
-    Int dist
-    String flags
 
+    File ploidy_table
+    String batch
+    String caller
+
+    File? svtk_to_gatk_script
+    File? gatk_to_svtk_script
+    Float? java_mem_fraction
+
+    File exclude_intervals
+    File contig_list
+
+    Float pesr_interval_overlap
+    Int pesr_breakend_window
+    String? clustering_algorithm
+
+    File reference_fasta
+    File reference_fasta_fai
+    File reference_dict
+
+    String gatk_docker
     String sv_base_mini_docker
     String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_cluster
-    RuntimeAttr? runtime_attr_concat
+
+    RuntimeAttr? runtime_attr_multi_svtk_to_gatk_vcf
+    RuntimeAttr? runtime_attr_exclude_intervals_pesr
+    RuntimeAttr? runtime_attr_svcluster
+    RuntimeAttr? runtime_override_concat_vcfs_pesr
+    RuntimeAttr? runtime_attr_multi_gatk_to_svtk_vcf
+    RuntimeAttr? runtime_attr_index_vcfs
   }
 
-  Array[Array[String]] contiglist = read_tsv(contigs)
+  call tasks_cluster.MultiSvtkToGatkVcf {
+    input:
+      vcfs=vcfs,
+      ploidy_table=ploidy_table,
+      output_suffix="gatk_formatted",
+      script=svtk_to_gatk_script,
+      sv_pipeline_docker=sv_pipeline_docker,
+      runtime_attr_override=runtime_attr_multi_svtk_to_gatk_vcf
+  }
 
-  scatter (contig in contiglist) {
-    call VCFCluster {
-      input:
-        vcfs = vcfs,
-        batch = batch,
-        algorithm = algorithm,
-        chrom = contig[0],
-        dist = dist,
-        frac = frac,
-        exclude_list = exclude_list,
-        svsize = svsize,
-        svtypes = svtypes,
-        flags = flags,
-        sv_pipeline_docker = sv_pipeline_docker,
-        runtime_attr_override = runtime_attr_cluster
+  call tasks_cluster.MultiExcludeIntervalsPESR {
+    input:
+      vcfs=MultiSvtkToGatkVcf.out,
+      output_suffix="exclude_intervals",
+      intervals=exclude_intervals,
+      intervals_index=exclude_intervals + ".tbi",
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_attr_override=runtime_attr_exclude_intervals_pesr
+  }
+
+  call util.IndexVcfs {
+    input:
+      vcfs=MultiExcludeIntervalsPESR.out,
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_attr_override=runtime_attr_index_vcfs
+  }
+
+  scatter (maybe_vcf in IndexVcfs.vcfs_and_indexes) {
+    if (basename(maybe_vcf, ".vcf.gz") + ".vcf.gz" == basename(maybe_vcf)) {
+      File indexed_vcfs_ = maybe_vcf
     }
   }
-  call ConcatVCFs {
+  Array[File] indexed_vcfs = select_all(indexed_vcfs_)
+
+  Array[String] contigs = transpose(read_tsv(contig_list))[0]
+  scatter (contig in contigs) {
+    call tasks_cluster.SVCluster {
+      input:
+        vcfs=indexed_vcfs,
+        ploidy_table=ploidy_table,
+        output_prefix="~{batch}.~{caller}.~{contig}.clustered",
+        contig=contig,
+        fast_mode=true,
+        algorithm=clustering_algorithm,
+        pesr_sample_overlap=0,
+        pesr_interval_overlap=pesr_interval_overlap,
+        pesr_breakend_window=pesr_breakend_window,
+        reference_fasta=reference_fasta,
+        reference_fasta_fai=reference_fasta_fai,
+        reference_dict=reference_dict,
+        java_mem_fraction=java_mem_fraction,
+        variant_prefix="~{batch}_~{caller}_~{contig}_",
+        gatk_docker=gatk_docker,
+        runtime_attr_override=runtime_attr_svcluster
+    }
+  }
+
+  call tasks_cohort.ConcatVcfs {
     input:
-      vcfs = VCFCluster.clustered_vcf,
-      batch = batch,
-      algorithm = algorithm,
-      sv_base_mini_docker = sv_base_mini_docker,
-      runtime_attr_override = runtime_attr_concat
+      vcfs=SVCluster.out,
+      vcfs_idx=SVCluster.out_index,
+      naive=true,
+      outfile_prefix="~{batch}.~{caller}.clustered",
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_attr_override=runtime_override_concat_vcfs_pesr
+  }
+
+  call tasks_cluster.GatkToSvtkVcf {
+    input:
+      vcf=ConcatVcfs.concat_vcf,
+      output_prefix="~{batch}.~{caller}.clustered.svtk_formatted",
+      script=gatk_to_svtk_script,
+      source=caller,
+      contig_list=contig_list,
+      remove_formats="CN",
+      sv_pipeline_docker=sv_pipeline_docker,
+      runtime_attr_override=runtime_attr_multi_gatk_to_svtk_vcf
   }
 
   output {
-    File clustered_vcf = ConcatVCFs.vcf
-    File clustered_vcf_index = ConcatVCFs.vcf_index
+    File clustered_vcf = GatkToSvtkVcf.out
+    File clustered_vcf_index = GatkToSvtkVcf.out_index
   }
 }
-
-task VCFCluster {
-  input {
-    Array[File] vcfs
-    String batch
-    String algorithm
-    String chrom
-    Int dist
-    Float frac
-    File exclude_list
-    Int svsize
-    String svtypes
-    String flags
-    String sv_pipeline_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  RuntimeAttr default_attr = object {
-    cpu_cores: 1, 
-    mem_gb: 3.75,
-    disk_gb: 10,
-    boot_disk_gb: 10,
-    preemptible_tries: 3,
-    max_retries: 3
-  }
-  RuntimeAttr runtime_attr = select_first([runtime_attr_override, default_attr])
-
-  output {
-    File clustered_vcf = "${batch}.${algorithm}.${chrom}.vcf.gz"
-  }
-  command <<<
-
-    set -euo pipefail
-    for f in ~{sep=" "  vcfs}; do tabix -p vcf -f $f; done;
-    tabix -p bed ~{exclude_list};
-
-    svtk vcfcluster ~{write_lines(vcfs)} stdout \
-      -r ~{chrom} \
-      -p ~{batch}_~{algorithm}_~{chrom} \
-      -d ~{dist} \
-      -f ~{frac} \
-      -x ~{exclude_list} \
-      -z ~{svsize} \
-      -t ~{svtypes} \
-      ~{flags} \
-      | vcf-sort -c \
-      | bgzip -c > ~{batch}.~{algorithm}.~{chrom}.vcf.gz
-  
-  >>>
-  runtime {
-    cpu: select_first([runtime_attr.cpu_cores, default_attr.cpu_cores])
-    memory: select_first([runtime_attr.mem_gb, default_attr.mem_gb]) + " GiB"
-    disks: "local-disk " + select_first([runtime_attr.disk_gb, default_attr.disk_gb]) + " HDD"
-    bootDiskSizeGb: select_first([runtime_attr.boot_disk_gb, default_attr.boot_disk_gb])
-    docker: sv_pipeline_docker
-    preemptible: select_first([runtime_attr.preemptible_tries, default_attr.preemptible_tries])
-    maxRetries: select_first([runtime_attr.max_retries, default_attr.max_retries])
-  }
-
-}
-
-task ConcatVCFs {
-  input {
-    Array[File] vcfs
-    String batch
-    String algorithm
-    String sv_base_mini_docker
-    RuntimeAttr? runtime_attr_override
-  }
-
-  RuntimeAttr default_attr = object {
-    cpu_cores: 1, 
-    mem_gb: 3.75, 
-    disk_gb: 10,
-    boot_disk_gb: 10,
-    preemptible_tries: 3,
-    max_retries: 1
-  }
-  RuntimeAttr runtime_attr = select_first([runtime_attr_override, default_attr])
-
-  output {
-    File vcf = "${batch}.${algorithm}.vcf.gz"
-    File vcf_index = "${batch}.${algorithm}.vcf.gz.tbi"
-  }
-  command <<<
-
-    set -euo pipefail
-    vcf-concat ~{sep=" "  vcfs} | vcf-sort -c | bgzip -c > ~{batch}.~{algorithm}.vcf.gz;
-    tabix -p vcf ~{batch}.~{algorithm}.vcf.gz;
-  
-  >>>
-  runtime {
-    cpu: select_first([runtime_attr.cpu_cores, default_attr.cpu_cores])
-    memory: select_first([runtime_attr.mem_gb, default_attr.mem_gb]) + " GiB"
-    disks: "local-disk " + select_first([runtime_attr.disk_gb, default_attr.disk_gb]) + " HDD"
-    bootDiskSizeGb: select_first([runtime_attr.boot_disk_gb, default_attr.boot_disk_gb])
-    docker: sv_base_mini_docker
-    preemptible: select_first([runtime_attr.preemptible_tries, default_attr.preemptible_tries])
-    maxRetries: select_first([runtime_attr.max_retries, default_attr.max_retries])
-  }
-
-}
-
