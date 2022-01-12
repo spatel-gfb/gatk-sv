@@ -284,7 +284,7 @@ task MergeRDSplits {
   command <<<
 
     set -eu
-    echo 'chr	Start	End	CNVID	SampleIDs	Type	Median_Power	P	3ndMaxP	Model	Median_Rank	Median_Separation' > ~{prefix}.stats
+    echo 'chr	Start	End	CNVID	SampleIDs	Type	Median_Power	P	2ndMaxP	Model	Median_Rank	Median_Separation' > ~{prefix}.stats
     while read split; do
       sed 1d $split;
     done < ~{write_lines(stats)} >> ~{prefix}.stats
