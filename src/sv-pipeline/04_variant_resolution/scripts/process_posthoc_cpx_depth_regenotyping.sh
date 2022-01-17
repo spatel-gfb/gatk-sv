@@ -2,7 +2,7 @@
 
 # Reassign variant labels based on depth regenotyping in mod04b
 
-set -exo pipefail
+set -eo pipefail
 ###USAGE
 usage(){
 cat <<EOF
@@ -994,14 +994,25 @@ while read VID MOD REASON svtype cpxtype cpxintervals SVLEN SOURCE START END; do
       #Modify info as needed
       INFO=$( fgrep -w ${VID} ${GTDIR}/variants_to_be_reassessed.vcf \
                 | cut -f8 \
-                | sed -r -e "s/END=[^;]*;/END=$END;/" \
+                | sed -r -e "s/^END=[^;]*;/END=$END;/" \
+                | sed -r -e "s/;END=[^;]*;/;END=$END;/" \
+                | sed -r -e "s/;END=[^;]*$/;END=$END/" \
+                | sed -r -e "s/^SVTYPE=[^;]*;/SVTYPE=$svtype;/" \
                 | sed -r -e "s/;SVTYPE=[^;]*;/;SVTYPE=$svtype;/" \
+                | sed -r -e "s/;SVTYPE=[^;]*$/;SVTYPE=$svtype/" \
+                | sed -r -e "s/^SVLEN=[^;]*;/SVLEN=$SVLEN;/" \
                 | sed -r -e "s/;SVLEN=[^;]*;/;SVLEN=$SVLEN;/" \
-                | sed -r -e "s/;CPX_TYPE=[^;]*$/;CPX_TYPE=${cpxtype}/" \
+                | sed -r -e "s/;SVLEN=[^;]*$/;SVLEN=$SVLEN/" \
+                | sed -r -e "s/^CPX_TYPE=[^;]*;/CPX_TYPE=${cpxtype};/" \
                 | sed -r -e "s/;CPX_TYPE=[^;]*;/;CPX_TYPE=${cpxtype};/" \
+                | sed -r -e "s/;CPX_TYPE=[^;]*$/;CPX_TYPE=${cpxtype}/" \
+                | sed -r -e 's/^UNRESOLVED;//' \
                 | sed -r -e 's/;UNRESOLVED;/;/' \
+                | sed -r -e 's/;UNRESOLVED$//' \
+                | sed -r -e 's/^UNRESOLVED_TYPE=[^;]*;//' \
                 | sed -r -e 's/;UNRESOLVED_TYPE=[^;]*;/;/' \
                 | sed -r -e 's/;UNRESOLVED_TYPE=[^;]*$//' \
+                | sed -r -e 's/^EVENT=[^;]*;//' \
                 | sed -r -e 's/;EVENT=[^;]*;/;/' \
                 | sed -r -e 's/;EVENT=[^;]*$//' )
       #Add/remove/modify CPX_TYPE, if needed
