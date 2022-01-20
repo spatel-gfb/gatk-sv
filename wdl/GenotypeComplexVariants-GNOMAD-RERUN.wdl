@@ -176,7 +176,7 @@ task GnomadRerunSubset {
     }
     command <<<
         set -euo pipefail
-        bcftools view --no-version -i 'ALT=="<INS:UNK>" && INFO/CPX_TYPE!="NA"' ~{vcf} -Oz -o ~{prefix}.vcf.gz
+        bcftools view --no-version -i 'ALT=="<INS:UNK>"' ~{vcf} -Oz -o ~{prefix}.vcf.gz
         tabix ~{prefix}.vcf.gz
     >>>
     runtime {
