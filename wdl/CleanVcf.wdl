@@ -120,7 +120,6 @@ workflow CleanVcf {
         project=project,
         clean_vcf1b_records_per_shard=clean_vcf1b_records_per_shard,
         clean_vcf5_records_per_shard=clean_vcf5_records_per_shard,
-        clean_vcf5_threads_per_task=clean_vcf5_threads_per_task,
         chr_x=chr_x,
         chr_y=chr_y,
         linux_docker=linux_docker,

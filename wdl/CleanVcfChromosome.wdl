@@ -4,7 +4,6 @@ import "Structs.wdl"
 import "TasksMakeCohortVcf.wdl" as MiniTasks
 import "CleanVcf1b.wdl" as c1b
 import "CleanVcf5.wdl" as c5
-import "DropRedundantCNVs.wdl" as drc
 import "HailMerge.wdl" as HailMerge
 
 workflow CleanVcfChromosome {

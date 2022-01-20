@@ -89,7 +89,6 @@ workflow MakeCohortVcf {
 
     # overrides for mini tasks
     RuntimeAttr? runtime_override_ids_from_vcf
-    RuntimeAttr? runtime_override_clean_bothside_pass
     RuntimeAttr? runtime_override_clean_background_fail
     RuntimeAttr? runtime_override_make_cpx_cnv_input_file
     RuntimeAttr? runtime_override_subset_inversions
@@ -220,7 +219,6 @@ workflow MakeCohortVcf {
       sv_pipeline_docker=sv_pipeline_docker,
       runtime_override_update_sr_list=runtime_override_update_sr_list_cluster,
       runtime_override_merge_pesr_depth=runtime_override_merge_pesr_depth,
-      runtime_override_clean_bothside_pass=runtime_override_clean_bothside_pass,
       runtime_override_clean_background_fail=runtime_override_clean_background_fail,
       runtime_override_concat=runtime_override_cluster_merge,
       runtime_override_join_vcfs=runtime_override_join_vcfs,
