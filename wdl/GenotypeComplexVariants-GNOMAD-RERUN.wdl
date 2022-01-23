@@ -101,7 +101,7 @@ workflow GenotypeComplexVariants {
                 n_per_split_small=2500,
                 n_per_split_large=250,
                 n_rd_test_bins=100000,
-                prefix=cohort_name,
+                prefix="~{cohort_name}.GNOMAD-CPX-RERUN",
                 contig=contig,
                 ped_files=SubsetPedFile.ped_subset_file,
                 ref_dict=ref_dict,
