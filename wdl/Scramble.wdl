@@ -85,10 +85,16 @@ task RunScramble {
     xDir=$PWD
     scrambleDir="/app"
 
+    # create a blast db from the reference
     cat ~{reference_fasta} | makeblastdb -in - -parse_seqids -title ref -dbtype nucl -out ref
+
+    # Scramble first step: identify clusters of split reads
     $scrambleDir/cluster_identifier/src/build/cluster_identifier ~{bam_or_cram_file} > clusters.txt
+
+    # split the file of clusters to keep memory bounded
     split -a3 -l3000 clusters.txt xyzzy
 
+    # produce a *_MEIs.txt file for each split
     for fil in xyzzy???
       do Rscript --vanilla $scrambleDir/cluster_analysis/bin/SCRAMble.R --out-name $xDir/$fil \
            --cluster-file $xDir/$fil --install-dir $scrambleDir/cluster_analysis/bin \
@@ -96,31 +102,49 @@ task RunScramble {
            --ref $xDir/ref --no-vcf --eval-meis ~{true='--eval-dels' false='' detect_deletions}
     done
 
-    echo '##fileformat=VCFv4.3' > hdr
-    echo '##reference='"~{reference_fasta}" >> hdr
-    echo '##source=scramble' >> hdr
-    echo '##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">' >> hdr
-    echo '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">' >> hdr
-    echo '##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Difference in length between REF and ALT alleles">' >> hdr
-    echo '##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description="Source algorithms">' >> hdr
-    echo '##INFO=<ID=STRANDS,Number=1,Type=String,Description="Breakpoint strandedness [++,+-,-+,--]">' >> hdr
-    echo '##INFO=<ID=CHR2,Number=1,Type=String,Description="Chromosome for END coordinate">' >> hdr
-    echo '##INFO=<ID=MEI_START,Number=1,Type=Integer,Description="Start of alignment to canonical MEI sequence">' >> hdr
-    echo '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">' >> hdr
+    # create a header for the output vcf(s)
+    echo \
+    '##fileformat=VCFv4.3
+    ##reference=~{reference_fasta}
+    ##source=scramble
+    ##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+    ##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+    ##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Difference in length between REF and ALT alleles">
+    ##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description="Source algorithms">
+    ##INFO=<ID=STRANDS,Number=1,Type=String,Description="Breakpoint strandedness [++,+-,-+,--]">
+    ##INFO=<ID=CHR2,Number=1,Type=String,Description="Chromosome for END coordinate">
+    ##INFO=<ID=MEI_START,Number=1,Type=Integer,Description="Start of alignment to canonical MEI sequence">
+    ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">' > hdr
     blastdbcmd -db ref -entry all -outfmt '##contig=<ID=%a,length=%l>' >> hdr
-    echo '#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	'"~{sample_name}" >> hdr
+    echo "#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	~{sample_name}" >> hdr
 
     cp hdr insertsVCF.tmp
 
-    echo '{ FS=OFS="\t" }' > processInserts.awk
-    echo '{ if(FNR<2)next' >> processInserts.awk
-    echo '  split($1,loc,":")' >> processInserts.awk
-    echo '  start=loc[2]+1' >> processInserts.awk
-    echo '  len=length($8)' >> processInserts.awk
-    echo '  end=start+len-1' >> processInserts.awk
-    echo '  print loc[1],start,".","N","<INS:ME:" toupper($2) ">",int($6),"PASS","END=" end ";SVTYPE=INS;SVLEN=" len ";MEI_START=" $10 ";STRANDS=+-;CHR2=" loc[1] ";ALGORITHMS=scramble","GT","0/1" }' >> processInserts.awk
+    # use awk to write the first part of an awk script that initializes an array mapping MEI name
+    #   onto its consensus sequence length
+    awk \
+    'BEGIN { FS=OFS="\t"; print "BEGIN{" }
+     /^>/  {if ( seq != "" ) print "seqLen[\"" seq "\"]=" len; seq = substr($0,2); len = 0}
+     !/^>/ {len += length($0)}
+     END   {if ( seq != "" ) print "seqLen[\"" seq "\"]=" len; print "}"}' \
+         $scrambleDir/cluster_analysis/resources/MEI_consensus_seqs.fa > awkScript.awk
 
-    awk -f processInserts.awk xyzzy???_MEIs.txt >> insertsVCF.tmp
+    # write the rest of the awk script that transforms the contents of the *_MEIs.txt files into a VCF
+    echo \
+    'BEGIN{ FS=OFS="\t" }
+    { if(FNR<2)next
+      split($1,loc,":")
+      start=loc[2]+1
+      end=start+1
+      len=($2=="sva"?$11:seqLen[$2]) - $10;
+      print loc[1],start,".","N","<INS:ME:" toupper($2) ">",int($6),"PASS",\
+            "END=" end ";SVTYPE=INS;SVLEN=" len ";MEI_START=" $10 ";STRANDS=+-;CHR2=" loc[1] ";ALGORITHMS=scramble",\
+            "GT","0/1" }' >> awkScript.awk
+
+    # transform the MEI descriptions into VCF lines
+    awk -f awkScript.awk xyzzy???_MEIs.txt >> insertsVCF.tmp
+
+    # sort and index the output VCF for insertions
     bcftools sort -Oz <insertsVCF.tmp >"~{sample_name}.scramble.insertions.vcf.gz"
     bcftools index -ft "~{sample_name}.scramble.insertions.vcf.gz"
 
@@ -128,13 +152,17 @@ task RunScramble {
     then
       cp hdr deletesVCF.tmp
 
-      echo '{ FS=OFS="\t" }' > processDeletes.awk
-      echo '{ if(FNR<2)next' >> processDeletes.awk
-      echo '  Q= $11=="NA" ? ($15=="NA"?".":$15) : ($15=="NA"?$11:($11+$15)/2)' >> processDeletes.awk
-      echo '  print $1,$2+1,".","N","<DEL>",Q=="."?".":int(Q),"PASS","END=" $3+1 ";SVTYPE=DEL;SVLEN=" $5 ";STRANDS=+-;CHR2=" $1 ";ALGORITHMS=scramble","GT","0/1" }' >> processDeletes.awk
+      # transform the *_PredictedDeletions.txt files into an output VCF for deletions
+      awk \
+      'BEGIN{ FS=OFS="\t" }
+      { if(FNR<2)next
+        Q= $11=="NA" ? ($15=="NA"?".":$15) : ($15=="NA"?$11:($11+$15)/2)
+        print $1,$2+1,".","N","<DEL>",Q=="."?".":int(Q),"PASS",\
+              "END=" $3+1 ";SVTYPE=DEL;SVLEN=" $5 ";STRANDS=+-;CHR2=" $1 ";ALGORITHMS=scramble",\
+              "GT","0/1" }' xyzzy???_PredictedDeletions.txt >> deletesVCF.tmp
 
-      awk -f processDeletes.awk xyzzy???_PredictedDeletions.txt >> deletesVCF.tmp
-      bcftools sort -Oz <deletesVCF.tmp >"~{sample_name}.scramble.deletions.vcf.gz"
+      # sort and index the output VCF for deletions
+      bcftools sort -Oz <deletesVCF.tmp > "~{sample_name}.scramble.deletions.vcf.gz"
       bcftools index -ft "~{sample_name}.scramble.deletions.vcf.gz"
     fi
   >>>
