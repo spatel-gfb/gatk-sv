@@ -28,7 +28,7 @@ from jinja2 import Environment, FileSystemLoader, Undefined
 # By default the following resource bundle aliases are applied:
 #
 #   dockers -> dockers
-#   ref_panel -> ref_panel_v1b
+#   ref_panel -> ref_panel_1kg
 #   reference_resources -> resources_hg38
 #   test_batch -> empty
 #
@@ -104,7 +104,7 @@ def main():
     raw_input_bundles['single_sample_none']['name'] = 'single_sample'
 
     default_aliases = {'dockers': 'dockers',
-                       'ref_panel': 'ref_panel_v1b',
+                       'ref_panel': 'ref_panel_1kg',
                        'reference_resources': 'resources_hg38',
                        'test_batch': 'test_batch_empty',
                        'single_sample': 'single_sample_none'}
