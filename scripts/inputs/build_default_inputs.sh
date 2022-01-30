@@ -36,6 +36,6 @@ bash scripts/inputs/clean_default_inputs.sh -d ${BASE_DIR}
 scripts/inputs/build_inputs.py ${BASE_DIR}/inputs/values ${BASE_DIR}/inputs/templates ${BASE_DIR}/inputs/build \
   -a '{ "single_sample" : "test_single_sample_NA12878", "ref_panel" : "ref_panel_1kg"}'
 
-scripts/inputs/build_inputs.py ${BASE_DIR}/inputs/values ${BASE_DIR}/inputs/templates/test ${BASE_DIR}/inputs/build/ref_panel_1kg \
+scripts/inputs/build_inputs.py ${BASE_DIR}/inputs/values ${BASE_DIR}/inputs/templates/test ${BASE_DIR}/inputs/build/test \
   -a '{"test_batch" : "ref_panel_1kg"}'
 

@@ -27,7 +27,7 @@
   "GatherSampleEvidenceBatch.gatk_docker_pesr_override" : {{ dockers.gatk_docker | tojson }},
   "GatherSampleEvidenceBatch.cloud_sdk_docker": {{ dockers.cloud_sdk_docker | tojson }},
 
-  "GatherSampleEvidenceBatch.batch": {{ test_batch.batch_name | tojson }},
+  "GatherSampleEvidenceBatch.batch": {{ test_batch.name | tojson }},
   "GatherSampleEvidenceBatch.primary_contigs_fai": {{ reference_resources.primary_contigs_fai | tojson }},
   "GatherSampleEvidenceBatch.sv_pipeline_base_docker": {{ dockers.sv_pipeline_base_docker | tojson }},
   "GatherSampleEvidenceBatch.linux_docker": {{ dockers.linux_docker | tojson }},

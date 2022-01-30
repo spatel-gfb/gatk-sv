@@ -3,8 +3,8 @@
   
   "PlotSVCountsPerSample.N_IQR_cutoff": "6",
 
-  "PlotSVCountsPerSample.prefix": {{ test_batch.batch_name | tojson }},
+  "PlotSVCountsPerSample.prefix": {{ test_batch.name | tojson }},
   "PlotSVCountsPerSample.vcfs" : [ 
-    {{ test_batch.baseline_final_vcf | tojson }}
+    {{ test_batch.clean_vcf | tojson }}
   ]
 }

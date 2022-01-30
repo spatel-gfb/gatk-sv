@@ -7,7 +7,7 @@
   "FilterBatchQc.sv_base_mini_docker":{{ dockers.sv_base_mini_docker | tojson }},
   "FilterBatchQc.sv_pipeline_qc_docker": {{ dockers.sv_pipeline_qc_docker | tojson }},
   
-  "FilterBatchQc.batch": {{ test_batch.batch_name | tojson }},
+  "FilterBatchQc.batch": {{ test_batch.name | tojson }},
   
   "FilterBatchQc.ped_file": {{ test_batch.ped_file | tojson }},
   "FilterBatchQc.depth_vcf_noOutliers": {{ test_batch.filtered_depth_vcf | tojson }},

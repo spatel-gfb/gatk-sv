@@ -12,7 +12,7 @@ from jinja2 import Environment, FileSystemLoader, Undefined
 # potentially tsv files for Terra import) based on the input templates in the repository and the
 # set of specified input values.
 #
-# Any json files in the input_values directory are read into maps corresponding to the file name. The input json files
+# Any json files in the values directory are read into maps corresponding to the file name. The input json files
 # should consist of single dictionaries. If an input dictionary contains a "name" key, its value will be used to report
 # missing value accesses.
 #
@@ -20,7 +20,7 @@ from jinja2 import Environment, FileSystemLoader, Undefined
 # is aliased to "reference_resources", a template accessing the "reference_resources" bundle will pull values from the
 # "resources_hg38.json" input values file.
 #
-# Values can be referred to by their resource bundle name + "." + attribute. For example, if the input_values
+# Values can be referred to by their resource bundle name + "." + attribute. For example, if the values
 # directory contains a file called dockers.json containing the map { "sv_pipeline_docker" : "gatksv/sv-pipeline:tag" },
 # and the "dockers.json" input file has been aliased to the "dockers" resource bundle, then in a template
 # the string {{ dockers.sv_pipeline_docker }} will be replaced with the string gatksv/sv-pipeline:tag.

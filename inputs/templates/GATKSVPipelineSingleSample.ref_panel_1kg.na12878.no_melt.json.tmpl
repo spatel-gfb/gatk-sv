@@ -18,7 +18,7 @@
   "GATKSVPipelineSingleSample.ref_panel_bincov_matrix": {{ ref_panel.bincov_matrix | tojson }},
   "GATKSVPipelineSingleSample.ref_panel_del_bed" : {{ ref_panel.del_bed | tojson }},
   "GATKSVPipelineSingleSample.ref_panel_dup_bed" : {{ ref_panel.dup_bed | tojson }},
-  "GATKSVPipelineSingleSample.ref_panel_vcf" : {{ ref_panel.vcf | tojson }},
+  "GATKSVPipelineSingleSample.ref_panel_vcf" : {{ ref_panel.clean_vcf | tojson }},
   "GATKSVPipelineSingleSample.PE_metrics" : {{ ref_panel.PE_metrics | tojson }},
   "GATKSVPipelineSingleSample.SR_metrics" : {{ ref_panel.SR_metrics | tojson }},
 
@@ -110,7 +110,7 @@
   "GATKSVPipelineSingleSample.ref_samples" : {{ ref_panel.samples | tojson }},
   "GATKSVPipelineSingleSample.ref_std_manta_vcfs" : {{ ref_panel.std_manta_vcfs | tojson }},
   "GATKSVPipelineSingleSample.ref_std_wham_vcfs" : {{ ref_panel.std_wham_vcfs | tojson }},
-  "GATKSVPipelineSingleSample.ref_pesr_disc_files" : {{ ref_panel.pesr_disc_files | tojson }},
-  "GATKSVPipelineSingleSample.ref_pesr_split_files" : {{ ref_panel.pesr_split_files | tojson }},
+  "GATKSVPipelineSingleSample.ref_pesr_disc_files" : {{ ref_panel.PE_files | tojson }},
+  "GATKSVPipelineSingleSample.ref_pesr_split_files" : {{ ref_panel.SR_files | tojson }},
   "GATKSVPipelineSingleSample.gcnv_model_tars" : {{ ref_panel.gcnv_model_tars | tojson }}
 }

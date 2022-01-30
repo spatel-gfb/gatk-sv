@@ -34,9 +34,9 @@
   "MakeCohortVcf.sv_pipeline_rdtest_docker": {{ dockers.sv_pipeline_rdtest_docker | tojson }},
   "MakeCohortVcf.sv_pipeline_qc_docker": {{ dockers.sv_pipeline_qc_docker | tojson }},
 
-  "MakeCohortVcf.cohort_name": {{ test_batch.batch_name | tojson }},
+  "MakeCohortVcf.cohort_name": {{ test_batch.name | tojson }},
   "MakeCohortVcf.batches": [
-    {{ test_batch.batch_name | tojson }}
+    {{ test_batch.name | tojson }}
   ],
   "MakeCohortVcf.ped_file": {{ test_batch.ped_file | tojson }},
   "MakeCohortVcf.disc_files": [
@@ -55,15 +55,15 @@
     {{ test_batch.genotyped_pesr_vcf| tojson }}
   ],
   "MakeCohortVcf.depth_vcfs": [
-    {{ test_batch.genotyped_depth_vcf | tojson }}
+    {{ test_batch.regenotyped_depth_vcf | tojson }}
   ],
   "MakeCohortVcf.depth_gt_rd_sep_files": [
     {{ test_batch.depth_gt_rd_sep_file | tojson }}
   ],
   "MakeCohortVcf.raw_sr_bothside_pass_files": [
-    {{ test_batch.raw_sr_bothside_pass_files | tojson }}
+    {{ test_batch.raw_sr_bothside_pass_file | tojson }}
   ],
   "MakeCohortVcf.raw_sr_background_fail_files": [
-    {{ test_batch.raw_sr_background_fail_files | tojson }}
+    {{ test_batch.raw_sr_background_fail_file | tojson }}
   ]
 }

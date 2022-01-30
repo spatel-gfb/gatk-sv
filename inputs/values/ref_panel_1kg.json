@@ -1,6 +1,5 @@
 {
   "name" : "ref_panel_1kg",
-  "batch_name" : "ref_panel_1kg",
   "bam_or_cram_files": [
     "gs://fc-56ac46ea-efc4-4683-b6d5-6d95bed41c5e/CCDG_13607/Project_CCDG_13607_B01_GRM_WGS.cram.2019-02-06/Sample_HG00096/analysis/HG00096.final.cram",
     "gs://fc-56ac46ea-efc4-4683-b6d5-6d95bed41c5e/CCDG_13607/Project_CCDG_13607_B01_GRM_WGS.cram.2019-02-06/Sample_HG00129/analysis/HG00129.final.cram",

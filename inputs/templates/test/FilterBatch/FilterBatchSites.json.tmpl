@@ -1,7 +1,7 @@
 {
   "FilterBatchSites.sv_pipeline_docker": {{ dockers.sv_pipeline_docker | tojson }},
 
-  "FilterBatchSites.batch": {{ test_batch.batch_name | tojson }},
+  "FilterBatchSites.batch": {{ test_batch.name | tojson }},
   "FilterBatchSites.depth_vcf" : {{ test_batch.merged_depth_vcf | tojson }},
   "FilterBatchSites.manta_vcf" : {{ test_batch.merged_manta_vcf | tojson }},
   "FilterBatchSites.wham_vcf" : {{ test_batch.merged_wham_vcf | tojson }},

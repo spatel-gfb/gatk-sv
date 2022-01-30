@@ -1,6 +1,6 @@
 {
   "AnnotateVcf.vcf" :   {{ test_batch.clean_vcf | tojson }},
-  "AnnotateVcf.vcf_idx" : {{ test_batch.clean_vcf_idx | tojson }},
+  "AnnotateVcf.vcf_idx" : {{ test_batch.clean_vcf_index | tojson }},
 
   "AnnotateVcf.protein_coding_gtf" : {{ reference_resources.protein_coding_gtf | tojson }},
   "AnnotateVcf.linc_rna_gtf" :       {{ reference_resources.linc_rna_gtf | tojson }},
@@ -17,7 +17,7 @@
   "AnnotateVcf.max_shards_per_chrom_step1" : 200,
   "AnnotateVcf.min_records_per_shard_step1" :  5000,
 
-  "AnnotateVcf.prefix" : {{ test_batch.batch_name | tojson }},
+  "AnnotateVcf.prefix" : {{ test_batch.name | tojson }},
 
   "AnnotateVcf.sv_base_mini_docker":{{ dockers.sv_base_mini_docker | tojson }},
   "AnnotateVcf.sv_pipeline_docker": {{ dockers.sv_pipeline_docker | tojson }}

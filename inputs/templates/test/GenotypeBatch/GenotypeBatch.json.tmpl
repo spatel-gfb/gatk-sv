@@ -14,7 +14,7 @@
   "GenotypeBatch.primary_contigs_list": {{ reference_resources.primary_contigs_list | tojson }},
   "GenotypeBatch.sv_pipeline_base_docker": {{ dockers.sv_pipeline_base_docker | tojson }},
 
-  "GenotypeBatch.batch": {{ test_batch.batch_name | tojson }},
+  "GenotypeBatch.batch": {{ test_batch.name | tojson }},
   "GenotypeBatch.rf_cutoffs": {{ test_batch.cutoffs | tojson }},
   "GenotypeBatch.batch_depth_vcf": {{ test_batch.filtered_depth_vcf | tojson }},
   "GenotypeBatch.batch_pesr_vcf": {{ test_batch.filtered_pesr_vcf | tojson }},

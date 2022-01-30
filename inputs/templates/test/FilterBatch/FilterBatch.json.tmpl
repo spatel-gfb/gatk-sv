@@ -9,7 +9,7 @@
   "FilterBatch.sv_pipeline_base_docker": {{ dockers.sv_pipeline_base_docker | tojson }},
   "FilterBatch.ped_file": {{ test_batch.ped_file | tojson }},
 
-  "FilterBatch.batch": {{ test_batch.batch_name | tojson }},
+  "FilterBatch.batch": {{ test_batch.name | tojson }},
   "FilterBatch.outlier_cutoff_table" : {{ test_batch.outlier_cutoff_table | tojson }},
   "FilterBatch.depth_vcf" : {{ test_batch.merged_depth_vcf | tojson }},
   "FilterBatch.manta_vcf" : {{ test_batch.merged_manta_vcf | tojson }},
