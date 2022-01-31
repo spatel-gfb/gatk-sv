@@ -84,6 +84,7 @@ task RunScramble {
 
     xDir=$PWD
     scrambleDir="/app"
+    meiRef=$scrambleDir/cluster_analysis/resources/MEI_consensus_seqs.fa
 
     # create a blast db from the reference
     cat ~{reference_fasta} | makeblastdb -in - -parse_seqids -title ref -dbtype nucl -out ref
@@ -94,11 +95,11 @@ task RunScramble {
     # split the file of clusters to keep memory bounded
     split -a3 -l3000 clusters.txt xyzzy
 
-    # produce a *_MEIs.txt file for each split
+    # Scramble 2nd step: produce a *_MEIs.txt file for each split
     for fil in xyzzy???
       do Rscript --vanilla $scrambleDir/cluster_analysis/bin/SCRAMble.R --out-name $xDir/$fil \
            --cluster-file $xDir/$fil --install-dir $scrambleDir/cluster_analysis/bin \
-           --mei-refs $scrambleDir/cluster_analysis/resources/MEI_consensus_seqs.fa \
+           --mei-refs $meiRef \
            --ref $xDir/ref --no-vcf --eval-meis ~{true='--eval-dels' false='' detect_deletions}
     done
 
@@ -106,15 +107,22 @@ task RunScramble {
     echo \
     '##fileformat=VCFv4.3
     ##reference=~{reference_fasta}
-    ##source=scramble
-    ##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+    ##source=scramble' > hdr
+
+    grep '^>' $meiRef | awk \
+    '{mei=toupper(substr($0,2)); if (mei=="L1") mei="LINE1"
+      print "##ALT=<ID=INS:ME:" mei ",Description=\"" mei " element insertion\">"}' >> hdr
+
+    echo \
+    '##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
     ##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
     ##INFO=<ID=SVLEN,Number=1,Type=Integer,Description="Difference in length between REF and ALT alleles">
     ##INFO=<ID=ALGORITHMS,Number=.,Type=String,Description="Source algorithms">
     ##INFO=<ID=STRANDS,Number=1,Type=String,Description="Breakpoint strandedness [++,+-,-+,--]">
     ##INFO=<ID=CHR2,Number=1,Type=String,Description="Chromosome for END coordinate">
     ##INFO=<ID=MEI_START,Number=1,Type=Integer,Description="Start of alignment to canonical MEI sequence">
-    ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">' > hdr
+    ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">' >> hdr
+
     blastdbcmd -db ref -entry all -outfmt '##contig=<ID=%a,length=%l>' >> hdr
     echo "#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	~{sample_name}" >> hdr
 
@@ -126,8 +134,7 @@ task RunScramble {
     'BEGIN { FS=OFS="\t"; print "BEGIN{" }
      /^>/  {if ( seq != "" ) print "seqLen[\"" seq "\"]=" len; seq = substr($0,2); len = 0}
      !/^>/ {len += length($0)}
-     END   {if ( seq != "" ) print "seqLen[\"" seq "\"]=" len; print "}"}' \
-         $scrambleDir/cluster_analysis/resources/MEI_consensus_seqs.fa > awkScript.awk
+     END   {if ( seq != "" ) print "seqLen[\"" seq "\"]=" len; print "}"}' $meiRef > awkScript.awk
 
     # write the rest of the awk script that transforms the contents of the *_MEIs.txt files into a VCF
     echo \
@@ -137,7 +144,8 @@ task RunScramble {
       start=loc[2]+1
       end=start+1
       len=($2=="sva"?$11:seqLen[$2]) - $10;
-      print loc[1],start,".","N","<INS:ME:" toupper($2) ">",int($6),"PASS",\
+      mei=toupper($2); if (mei=="L1") mei="LINE1"
+      print loc[1],start,".","N","<INS:ME:" mei ">",int($6),"PASS",\
             "END=" end ";SVTYPE=INS;SVLEN=" len ";MEI_START=" $10 ";STRANDS=+-;CHR2=" loc[1] ";ALGORITHMS=scramble",\
             "GT","0/1" }' >> awkScript.awk
 
