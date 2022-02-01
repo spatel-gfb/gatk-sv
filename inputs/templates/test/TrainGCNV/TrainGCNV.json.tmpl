@@ -1,7 +1,7 @@
 {
-  "TrainGCNV.reference_fasta": {{ reference_resources.reference_fasta | tojson }},
-  "TrainGCNV.reference_index": {{ reference_resources.reference_index | tojson }},
-  "TrainGCNV.reference_dict": {{ reference_resources.reference_dict | tojson }},
+  "TrainGCNV.reference_dict" : {{ reference_resources.reference_dict | tojson }},
+  "TrainGCNV.reference_fasta" : {{ reference_resources.reference_fasta | tojson }},
+  "TrainGCNV.reference_index" : {{ reference_resources.reference_index | tojson }},
 
   "TrainGCNV.ref_copy_number_autosomal_contigs": {{ reference_resources.copy_number_autosomal_contigs | tojson }},
   "TrainGCNV.allosomal_contigs": {{ reference_resources.allosomal_contigs | tojson }},
@@ -26,7 +26,7 @@
   "TrainGCNV.gcnv_depth_correction_tau": "10000",
   "TrainGCNV.gcnv_log_emission_sampling_median_rel_error": "0.001",
 
-  "TrainGCNV.sv_base_mini_docker":{{ dockers.sv_base_mini_docker | tojson }},
+  "TrainGCNV.sv_base_mini_docker": {{ dockers.sv_base_mini_docker | tojson }},
   "TrainGCNV.condense_counts_docker" : {{ dockers.condense_counts_docker | tojson }},
   "TrainGCNV.gatk_docker": {{ dockers.gatk_docker | tojson }},
   "TrainGCNV.linux_docker" : {{ dockers.linux_docker | tojson }},
@@ -57,7 +57,16 @@
   "TrainGCNV.gcnv_sample_psi_scale" : 0.000001,
   "TrainGCNV.ploidy_sample_psi_scale" : 0.001,
 
-  "TrainGCNV.cohort": "ref_panel_v1b",
-  "TrainGCNV.count_files": {{ test_batch.counts | tojson }},
-  "TrainGCNV.samples": {{ test_batch.samples | tojson }}
+  "TrainGCNV.runtime_attr_bundle": {
+    "cpu_cores": 1,
+    "mem_gb": 1.0,
+    "disk_gb": 200,
+    "boot_disk_gb": 10,
+    "preemptible_tries": 3,
+    "max_retries": 1
+  },
+
+  "TrainGCNV.cohort": {{ ref_panel.name | tojson }},
+  "TrainGCNV.count_files": {{ ref_panel.count_files | tojson }},
+  "TrainGCNV.samples": {{ ref_panel.samples | tojson }}
 }

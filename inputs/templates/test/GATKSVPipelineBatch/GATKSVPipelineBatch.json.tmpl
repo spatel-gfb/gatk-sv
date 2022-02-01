@@ -12,7 +12,7 @@
   "GATKSVPipelineBatch.samples": {{ ref_panel.samples | tojson }},
   "GATKSVPipelineBatch.bam_or_cram_files": {{ ref_panel.bam_or_cram_files | tojson }},
   "GATKSVPipelineBatch.gvcfs": {{ ref_panel.gvcfs | tojson }},
-  "GATKSVPipelineBatch.GATKSVPipelinePhase1.gcnv_model_tars" : {{ ref_panel.gcnv_model_tars | tojson }},
+  "GATKSVPipelineBatch.gcnv_model_tars" : {{ ref_panel.gcnv_model_tars | tojson }},
 
   "GATKSVPipelineBatch.melt_docker" : {{ dockers.melt_docker | tojson }},
 
@@ -65,7 +65,7 @@
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.min_svsize": "50",
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.run_matrix_qc": "true",
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.ploidy_sample_psi_scale": "0.001",
-  "GATKSVPipelineBatch.GATKSVPipelinePhase1.contig_ploidy_model_tar" : "gs://gatk-sv-resources-public/hg38/v0/sv-resources/ref-panel/1KG/gcnv/ref_panel_1kg_v1-contig-ploidy-model.tar.gz",
+  "GATKSVPipelineBatch.contig_ploidy_model_tar" : "gs://gatk-sv-resources-public/hg38/v0/sv-resources/ref-panel/1KG/gcnv/ref_panel_1kg_v1-contig-ploidy-model.tar.gz",
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.gcnv_learning_rate" : 0.03,
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.gcnv_num_thermal_advi_iters" : 250,
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.gcnv_max_advi_iter_first_epoch" : 1000,
@@ -106,7 +106,7 @@
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.rmsk": {{ reference_resources.rmsk | tojson }},
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.segdups": {{ reference_resources.segdups | tojson }},
 
-  "GATKSVPipelineBatch.GATKSVPipelinePhase1.outlier_cutoff_table" : {{ ref_panel.outlier_cutoff_table | tojson }},
+  "GATKSVPipelineBatch.outlier_cutoff_table" : {{ ref_panel.outlier_cutoff_table | tojson }},
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.outlier_cutoff_nIQR": "999999",
 
   "GATKSVPipelineBatch.GenotypeBatch.n_RD_genotype_bins": "100000",
@@ -138,7 +138,7 @@
   "GATKSVPipelineBatch.MakeCohortVcf.random_seed": 0,
   "GATKSVPipelineBatch.MakeCohortVcf.max_shard_size_resolve": 500,
 
-  "GATKSVPipelineBatch.BatchQC.qc_definitions" : "gs://gatk-sv-resources-public/test/batch/batch_sv.test_large.qc_definitions.tsv",
+  "GATKSVPipelineBatch.qc_definitions" : "gs://gatk-sv-resources-public/test/batch/batch_sv.test_large.qc_definitions.tsv",
 
   "GATKSVPipelineBatch.GATKSVPipelinePhase1.runtime_attr_bundle": {
     "cpu_cores": 1,
