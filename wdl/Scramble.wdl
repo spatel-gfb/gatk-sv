@@ -143,7 +143,7 @@ task RunScramble {
       split($1,loc,":")
       start=loc[2]+1
       end=start+1
-      len=($2=="sva"?$11:seqLen[$2]) - $10;
+      len=seqLen[$2]-$10
       mei=toupper($2); if (mei=="L1") mei="LINE1"
       print loc[1],start,".","N","<INS:ME:" mei ">",int($6),"PASS",\
             "END=" end ";SVTYPE=INS;SVLEN=" len ";MEI_START=" $10 ";STRANDS=+-;CHR2=" loc[1] ";ALGORITHMS=scramble",\
