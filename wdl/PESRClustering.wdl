@@ -34,6 +34,7 @@ workflow ClusterPESR {
 
     RuntimeAttr? runtime_attr_multi_svtk_to_gatk_vcf
     RuntimeAttr? runtime_attr_exclude_intervals_pesr
+    RuntimeAttr? runtime_attr_length_filter
     RuntimeAttr? runtime_attr_svcluster
     RuntimeAttr? runtime_override_concat_vcfs_pesr
     RuntimeAttr? runtime_attr_multi_gatk_to_svtk_vcf
@@ -60,9 +61,18 @@ workflow ClusterPESR {
       runtime_attr_override=runtime_attr_exclude_intervals_pesr
   }
 
-  call util.IndexVcfs {
+  call tasks_cluster.MultiBcftoolsView as LengthFilter {
     input:
       vcfs=MultiExcludeIntervalsPESR.out,
+      output_suffix="size_filtered",
+      args="-e 'INFO/SVLEN<50'",
+      sv_base_mini_docker=sv_base_mini_docker,
+      runtime_attr_override=runtime_attr_length_filter
+  }
+
+  call util.IndexVcfs {
+    input:
+      vcfs=LengthFilter.out,
       sv_base_mini_docker=sv_base_mini_docker,
       runtime_attr_override=runtime_attr_index_vcfs
   }

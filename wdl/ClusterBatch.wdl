@@ -62,6 +62,7 @@ workflow ClusterBatch {
     RuntimeAttr? runtime_attr_create_ploidy
     RuntimeAttr? runtime_attr_multi_svtk_to_gatk_vcf
     RuntimeAttr? runtime_attr_exclude_intervals_pesr
+    RuntimeAttr? runtime_attr_length_filter
     RuntimeAttr? runtime_attr_svcluster_pesr
     RuntimeAttr? runtime_override_concat_vcfs_pesr
     RuntimeAttr? runtime_attr_multi_gatk_to_svtk_vcf
@@ -115,6 +116,7 @@ workflow ClusterBatch {
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_multi_svtk_to_gatk_vcf=runtime_attr_multi_svtk_to_gatk_vcf,
         runtime_attr_exclude_intervals_pesr=runtime_attr_exclude_intervals_pesr,
+        runtime_attr_length_filter=runtime_attr_length_filter,
         runtime_attr_svcluster=runtime_attr_svcluster_pesr,
         runtime_override_concat_vcfs_pesr=runtime_override_concat_vcfs_pesr,
         runtime_attr_multi_gatk_to_svtk_vcf=runtime_attr_multi_gatk_to_svtk_vcf,
@@ -145,6 +147,7 @@ workflow ClusterBatch {
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_multi_svtk_to_gatk_vcf=runtime_attr_multi_svtk_to_gatk_vcf,
         runtime_attr_exclude_intervals_pesr=runtime_attr_exclude_intervals_pesr,
+        runtime_attr_length_filter=runtime_attr_length_filter,
         runtime_attr_svcluster=runtime_attr_svcluster_pesr,
         runtime_override_concat_vcfs_pesr=runtime_override_concat_vcfs_pesr,
         runtime_attr_multi_gatk_to_svtk_vcf=runtime_attr_multi_gatk_to_svtk_vcf,
@@ -175,6 +178,7 @@ workflow ClusterBatch {
         sv_pipeline_docker=sv_pipeline_docker,
         runtime_attr_multi_svtk_to_gatk_vcf=runtime_attr_multi_svtk_to_gatk_vcf,
         runtime_attr_exclude_intervals_pesr=runtime_attr_exclude_intervals_pesr,
+        runtime_attr_length_filter=runtime_attr_length_filter,
         runtime_attr_svcluster=runtime_attr_svcluster_pesr,
         runtime_override_concat_vcfs_pesr=runtime_override_concat_vcfs_pesr,
         runtime_attr_multi_gatk_to_svtk_vcf=runtime_attr_multi_gatk_to_svtk_vcf,

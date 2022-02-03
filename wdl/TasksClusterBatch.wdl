@@ -266,6 +266,56 @@ task MultiSvtkToGatkVcf {
     }
 }
 
+
+task MultiBcftoolsView {
+    input {
+        Array[File] vcfs
+        String args
+        File? script
+        String output_suffix
+        String sv_base_mini_docker
+        RuntimeAttr? runtime_attr_override
+    }
+
+    RuntimeAttr default_attr = object {
+                                   cpu_cores: 1,
+                                   mem_gb: 3.75,
+                                   disk_gb: ceil(10 + size(vcfs, "GB") * 2),
+                                   boot_disk_gb: 10,
+                                   preemptible_tries: 3,
+                                   max_retries: 1
+                               }
+    RuntimeAttr runtime_attr = select_first([runtime_attr_override, default_attr])
+
+    output {
+        Array[File] out = glob("out/*.vcf.gz")
+    }
+    command <<<
+        set -euo pipefail
+        mkdir out/
+        i=0
+        while read VCF; do
+            NAME=$(basename $VCF .vcf.gz)
+            SAMPLE_NUM=`printf %05d $i`
+            bcftools view \
+                ~{args} \
+                $VCF \
+                -Oz \
+                -o out/$SAMPLE_NUM.$NAME.~{output_suffix}.vcf.gz
+            i=$((i+1))
+        done < ~{write_lines(vcfs)}
+    >>>
+    runtime {
+        cpu: select_first([runtime_attr.cpu_cores, default_attr.cpu_cores])
+        memory: select_first([runtime_attr.mem_gb, default_attr.mem_gb]) + " GiB"
+        disks: "local-disk " + select_first([runtime_attr.disk_gb, default_attr.disk_gb]) + " HDD"
+        bootDiskSizeGb: select_first([runtime_attr.boot_disk_gb, default_attr.boot_disk_gb])
+        docker: sv_base_mini_docker
+        preemptible: select_first([runtime_attr.preemptible_tries, default_attr.preemptible_tries])
+        maxRetries: select_first([runtime_attr.max_retries, default_attr.max_retries])
+    }
+}
+
 task GatkToSvtkVcf {
     input {
         File vcf
