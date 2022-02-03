@@ -372,6 +372,7 @@ task CNVBedToGatkVcf {
         File sample_list
         File contig_list
         File ploidy_table
+        String vid_prefix
         String output_prefix
         String sv_pipeline_docker
         RuntimeAttr? runtime_attr_override
@@ -398,6 +399,7 @@ task CNVBedToGatkVcf {
             --out ~{output_prefix}.vcf.gz \
             --samples ~{sample_list} \
             --contigs ~{contig_list} \
+            --vid-prefix ~{vid_prefix} \
             --ploidy-table ~{ploidy_table}
         tabix ~{output_prefix}.vcf.gz
     >>>

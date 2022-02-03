@@ -450,6 +450,12 @@ def get_distributions_by_type(records, variant_types, field, bins, exclude_types
 
 
 def get_distribution_index(val, bins, num_bins):
+    # Checks if the value is a tuple (such as for SVLEN)
+    if isinstance(val, tuple):
+        if len(val) == 1:
+            val = val[0]
+        else:
+            raise ValueError(f"Encountered value tuple containing multiple entries: {val}")
     for i in range(num_bins):
         if val < bins[i]:
             return i

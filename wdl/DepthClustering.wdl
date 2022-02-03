@@ -47,6 +47,7 @@ workflow ClusterDepth {
       sample_list=sample_list,
       ploidy_table=ploidy_table,
       output_prefix="~{batch}.depth.gatk_formatted.del",
+      vid_prefix="~{batch}_depth_DEL_",
       sv_pipeline_docker=sv_pipeline_docker,
       runtime_attr_override=runtime_attr_cnv_bed_to_gatk_vcf
   }
@@ -59,6 +60,7 @@ workflow ClusterDepth {
       sample_list=sample_list,
       ploidy_table=ploidy_table,
       output_prefix="~{batch}.depth.gatk_formatted.dup",
+      vid_prefix="~{batch}_depth_DUP_",
       sv_pipeline_docker=sv_pipeline_docker,
       runtime_attr_override=runtime_attr_cnv_bed_to_gatk_vcf
   }
@@ -130,8 +132,8 @@ workflow ClusterDepth {
   }
 
   output {
-    File clustered_vcf = ConcatContigs.concat_vcf
-    File clustered_vcf_index = ConcatContigs.concat_vcf_idx
+    File clustered_vcf = GatkToSvtkVcf.out
+    File clustered_vcf_index = GatkToSvtkVcf.out_index
   }
 }
 

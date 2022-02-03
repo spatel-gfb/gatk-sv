@@ -88,108 +88,118 @@ class CNVRecord:
         self.svtype = cols[5]
 
 
-def collapse_batch(batch: List[CNVRecord],
-                   vcf_out: pysam.VariantFile,
-                   ploidy_dict: Dict[Text, Dict[Text, int]]):
-    contig = batch[0].contig
-    start = batch[0].start
-    end = batch[0].end
-    svtype = batch[0].svtype
-    if svtype != 'DEL' and svtype != 'DUP':
-        raise ValueError(f"Unsupported SV type: {svtype}")
-    alleles = ('N', '<' + svtype + '>')
-    vcf_record = vcf_out.new_record(contig=contig, start=start, stop=end, alleles=alleles)
-    vcf_record.info['SVTYPE'] = svtype
-    vcf_record.info['ALGORITHMS'] = "depth"
-    carriers = set(r.sample for r in batch)
-    for sample in vcf_out.header.samples:
-        ploidy = ploidy_dict[sample][contig]
-        if ploidy > 2:
-            raise ValueError(f"Unsupported {contig} ploidy for sample {sample}: {ploidy}")
-        genotype = vcf_record.samples[sample]
-        genotype['ECN'] = ploidy
-        if ploidy == 0:
-            genotype['GT'] = ()
-            genotype['CN'] = 0
-            continue
-        if sample in carriers:
-            if ploidy == 1:
-                genotype['GT'] = (1, )
-                if svtype == 'DEL':
-                    genotype['CN'] = 0
-                elif svtype == 'DUP':
-                    genotype['CN'] = 2
-            elif ploidy == 2:
-                genotype['GT'] = (0, 1)
-                if svtype == 'DEL':
-                    genotype['CN'] = 1
-                elif svtype == 'DUP':
-                    genotype['CN'] = 3
+class CNVWriter:
+
+    def __init__(self,
+               bed_path: Text,
+               vcf_path: Text,
+               contigs: Set[Text],
+               samples: Iterable[Text],
+               vid_prefix: Text,
+               ploidy_dict: Dict[Text, Dict[Text, int]]):
+        self.bed = self.__open_bed(bed_path)
+        header = create_header(contigs=contigs, samples=samples)
+        self.vcf_out = pysam.VariantFile(vcf_path, mode='w', header=header)
+        self.vid_index = 0
+        self.vid_prefix = vid_prefix
+        self.ploidy_dict = ploidy_dict
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.bed.close()
+        self.vcf_out.close()
+
+    def __open_bed(self, path: Text) -> IO[Text]:
+        if path.endswith('.gz'):
+            return gzip.open(path, 'rt')
         else:
-            genotype['CN'] = ploidy
-            if ploidy == 1:
-                genotype['GT'] = (0, )
-            elif ploidy == 2:
-                genotype['GT'] = (0, 0)
-    return vcf_record
+            return open(path, 'r')
 
+    def collapse_batch(self, batch: List[CNVRecord]):
+        contig = batch[0].contig
+        start = batch[0].start
+        end = batch[0].end
+        svtype = batch[0].svtype
+        if svtype != 'DEL' and svtype != 'DUP':
+            raise ValueError(f"Unsupported SV type: {svtype}")
+        alleles = ('N', '<' + svtype + '>')
+        vcf_record = self.vcf_out.new_record(contig=contig, start=start, stop=end, alleles=alleles)
+        vcf_record.info['SVTYPE'] = svtype
+        vcf_record.info['ALGORITHMS'] = "depth"
+        carriers = set(r.sample for r in batch)
+        for sample in self.vcf_out.header.samples:
+            ploidy = self.ploidy_dict[sample][contig]
+            if ploidy > 2:
+                raise ValueError(f"Unsupported {contig} ploidy for sample {sample}: {ploidy}")
+            genotype = vcf_record.samples[sample]
+            genotype['ECN'] = ploidy
+            if ploidy == 0:
+                genotype['GT'] = ()
+                genotype['CN'] = 0
+                continue
+            if sample in carriers:
+                if ploidy == 1:
+                    genotype['GT'] = (1, )
+                    if svtype == 'DEL':
+                        genotype['CN'] = 0
+                    elif svtype == 'DUP':
+                        genotype['CN'] = 2
+                elif ploidy == 2:
+                    genotype['GT'] = (0, 1)
+                    if svtype == 'DEL':
+                        genotype['CN'] = 1
+                    elif svtype == 'DUP':
+                        genotype['CN'] = 3
+            else:
+                genotype['CN'] = ploidy
+                if ploidy == 1:
+                    genotype['GT'] = (0, )
+                elif ploidy == 2:
+                    genotype['GT'] = (0, 0)
+        return vcf_record
 
-def collapse_and_write_batch(batch: List[CNVRecord],
-                             vcf_out: pysam.VariantFile,
-                             ploidy_dict: Dict[Text, Dict[Text, int]]):
-    sorted_batch = multisort(xs=batch, specs=BATCH_SORT_SPEC)
-    current_group_spec = None
-    current_group = []
-    for r in sorted_batch:
-        group_spec = (r.contig, r.start, r.end, r.svtype)
-        if current_group_spec != group_spec:
-            if len(current_group) > 0:
-                vcf_out.write(collapse_batch(batch=current_group, vcf_out=vcf_out, ploidy_dict=ploidy_dict))
-            current_group_spec = group_spec
-            current_group = [r]
-        else:
-            current_group.append(r)
+    def collapse_and_write_batch(self, batch: List[CNVRecord]):
+        sorted_batch = multisort(xs=batch, specs=BATCH_SORT_SPEC)
+        current_group_spec = None
+        current_group = []
+        for r in sorted_batch:
+            group_spec = (r.contig, r.start, r.end, r.svtype)
+            if current_group_spec != group_spec:
+                if len(current_group) > 0:
+                    record = self.collapse_batch(batch=current_group)
+                    record.id = f"{self.vid_prefix}{self.vid_index}"
+                    self.vid_index += 1
+                    self.vcf_out.write(record)
+                current_group_spec = group_spec
+                current_group = [r]
+            else:
+                current_group.append(r)
 
-
-def convert_bed_to_vcf(bed_path: Text,
-                       vcf_path: Text,
-                       contigs: Set[Text],
-                       samples: Iterable[Text],
-                       ploidy_dict: Dict[Text, Dict[Text, int]]):
-
-    bed = __open_bed(bed_path)
-    header = create_header(contigs=contigs, samples=samples)
-    vcf_out = pysam.VariantFile(vcf_path, mode='w', header=header)
-
-    last_contig = None
-    last_start = None
-    batch = []  # batch of identical sites (across multiple samples)
-    for line in bed:
-        if line.startswith("#"):
-            continue
-        record = CNVRecord(line)
-        if last_contig == record.contig and last_start == record.start:
-            batch.append(record)
-        else:
-            collapse_and_write_batch(batch=batch, vcf_out=vcf_out, ploidy_dict=ploidy_dict)
-            last_contig = record.contig
-            last_start = record.start
-            batch = [record]
-    collapse_and_write_batch(batch=batch, vcf_out=vcf_out, ploidy_dict=ploidy_dict)
-    bed.close()
-    vcf_out.close()
+    def convert_bed_to_vcf(self):
+        last_contig = None
+        last_start = None
+        batch = []  # batch of identical sites (across multiple samples)
+        index = 0
+        for line in self.bed:
+            if line.startswith("#"):
+                continue
+            record = CNVRecord(line)
+            if last_contig == record.contig and last_start == record.start:
+                batch.append(record)
+            else:
+                self.collapse_and_write_batch(batch=batch)
+                index += 1
+                last_contig = record.contig
+                last_start = record.start
+                batch = [record]
+        self.collapse_and_write_batch(batch=batch)
 
 
 def __read_list(path: Text) -> List[Text]:
     with open(path, 'r') as f:
         return [line.strip() for line in f]
-
-
-def __open_bed(path: Text) -> IO[Text]:
-    if path.endswith('.gz'):
-        return gzip.open(path, 'rt')
-    else:
-        return open(path, 'r')
 
 
 def __parse_ploidy_table(path: Text) -> Dict[Text, Dict[Text, int]]:
@@ -228,6 +238,8 @@ def __parse_arguments(argv: List[Text]) -> argparse.Namespace:
                         help="List of contigs")
     parser.add_argument("--samples", type=str, required=True,
                         help="List of samples")
+    parser.add_argument("--vid-prefix", type=str, required=True,
+                        help="Variant ID prefix")
     parser.add_argument("--out", type=str, required=True,
                         help="Output VCF")
     parser.add_argument("--ploidy-table", type=str, required=True,
@@ -249,13 +261,13 @@ def main(argv: Optional[List[Text]] = None):
     contigs = __read_list(arguments.contigs)
     samples = __read_list(arguments.samples)
     ploidy_dict = __parse_ploidy_table(arguments.ploidy_table)
-    convert_bed_to_vcf(
-        bed_path=arguments.bed,
-        vcf_path=arguments.out,
-        samples=samples,
-        contigs=contigs,
-        ploidy_dict=ploidy_dict
-    )
+    with CNVWriter(bed_path=arguments.bed,
+                   vcf_path=arguments.out,
+                   samples=samples,
+                   vid_prefix=arguments.vid_prefix,
+                   contigs=contigs,
+                   ploidy_dict=ploidy_dict) as writer:
+        writer.convert_bed_to_vcf()
 
 
 if __name__ == "__main__":
