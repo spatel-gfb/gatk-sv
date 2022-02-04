@@ -37,6 +37,7 @@ workflow ClusterBatch {
     String? depth_clustering_algorithm
 
     # PESR-based variant clustering
+    Int? pesr_min_size
     File pesr_exclude_intervals
     Float pesr_interval_overlap
     Int pesr_breakend_window
@@ -100,6 +101,7 @@ workflow ClusterBatch {
         ploidy_table=CreatePloidyTableFromPed.out,
         batch=batch,
         caller="manta",
+        min_size=select_first([pesr_min_size, 50]),
         svtk_to_gatk_script=svtk_to_gatk_script,
         gatk_to_svtk_script=gatk_to_svtk_script,
         exclude_intervals=pesr_exclude_intervals,
@@ -131,6 +133,7 @@ workflow ClusterBatch {
         ploidy_table=CreatePloidyTableFromPed.out,
         batch=batch,
         caller="wham",
+        min_size=select_first([pesr_min_size, 50]),
         svtk_to_gatk_script=svtk_to_gatk_script,
         gatk_to_svtk_script=gatk_to_svtk_script,
         exclude_intervals=pesr_exclude_intervals,
@@ -162,6 +165,7 @@ workflow ClusterBatch {
         ploidy_table=CreatePloidyTableFromPed.out,
         batch=batch,
         caller="melt",
+        min_size=select_first([pesr_min_size, 50]),
         svtk_to_gatk_script=svtk_to_gatk_script,
         gatk_to_svtk_script=gatk_to_svtk_script,
         exclude_intervals=pesr_exclude_intervals,
