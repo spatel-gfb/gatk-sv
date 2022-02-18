@@ -68,7 +68,7 @@ task RunScramble {
     mem_gb: 16,
     disk_gb: 250,
     boot_disk_gb: 10,
-    preemptible_tries: 0,
+    preemptible_tries: 1,
     max_retries: 1
   }
   RuntimeAttr runtime_attr = select_first([runtime_attr_override, default_attr])
@@ -93,7 +93,9 @@ task RunScramble {
     $scrambleDir/cluster_identifier/src/build/cluster_identifier ~{bam_or_cram_file} > clusters.txt
 
     # split the file of clusters to keep memory bounded
-    split -a3 -l3000 clusters.txt xyzzy
+    # The awk script removes lines where field 4 (the left consensus) contains nothing but 'n's
+    #   because the deletion hunter in Scramble barfs on these.
+    awk 'length(gensub(/n/,"","g",$4))' clusters.txt | split -a3 -l2500 - xyzzy
 
     # Scramble 2nd step: produce a *_MEIs.txt file for each split
     for fil in xyzzy???

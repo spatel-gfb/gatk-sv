@@ -264,7 +264,7 @@ workflow GatherSampleEvidence {
         bam_or_cram_index = bam_index_,
         sample_name = sample_id,
         reference_fasta = reference_fasta,
-        detect_deletions = false,
+        detect_deletions = true,
         scramble_docker = select_first([scramble_docker]),
         runtime_attr_scramble = runtime_attr_scramble
     }
@@ -290,7 +290,7 @@ workflow GatherSampleEvidence {
   # Avoid storage costs
   if (!is_bam_) {
     if (delete_intermediate_bam) {
-      Array[File] ctb_dummy = select_all([CollectCounts.counts, Delly.vcf, Manta.vcf, PESRCollection.disc_out, PESRCollection.split_out, MELT.vcf, Scramble.insertions_vcf, Whamg.vcf])
+      Array[File] ctb_dummy = select_all([CollectCounts.counts, Delly.vcf, Manta.vcf, PESRCollection.disc_out, PESRCollection.split_out, MELT.vcf, Scramble.insertions_vcf, Scramble.deletions_vcf, Whamg.vcf])
       call DeleteIntermediateFiles {
         input:
           intermediates = select_all([CramToBam.bam_file, MELT.filtered_bam]),
